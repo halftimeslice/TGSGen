@@ -3,14 +3,21 @@ export type LatLng = {
   lng: number
 }
 
-export type WorkZonePoint = 'start' | 'end' | 'third' | null
+export type WorkZonePoint = 'start' | 'end' | 'roundabout' | null
+
+export type Scenario = 'road' | 'roundabout'
+
+export type PolylineSegment = {
+  type: 'road' | 'roundabout'
+  nodes: LatLng[]
+}
 
 export type WorkZone = {
   start: LatLng | null
   end: LatLng | null
-  third: LatLng | null
   closedSide: 'left' | 'right' | null
   polyline: LatLng[] | null
+  polylineSegments: PolylineSegment[] | null
 }
 
 export type RoadData = {
@@ -30,3 +37,109 @@ export type RoadData = {
 }
 
 export type FetchStatus = 'idle' | 'loading' | 'loaded' | 'error'
+
+export type RoundaboutArm = {
+  wayId: string
+  pairedWayId?: string          // set when two one-way ways (entry + exit) are grouped as one arm
+  name: string | null
+  lanes: number
+  speedLimit: number
+  speedLimitIsDefault: boolean
+  isOneWay: boolean
+  oneWayDir: 'entry' | 'exit' | null
+  connectionNode: LatLng
+  angleFromCenter: number
+}
+
+export type RoundaboutData = {
+  type: 'full' | 'mini'
+  wayId: string          // OSM way ID for full RAB; OSM node ID for mini RAB
+  center: LatLng
+  nodes: LatLng[]        // ring geometry — empty for mini RAB (ring is synthesised)
+  arms: RoundaboutArm[]
+}
+
+export type WorkParams = {
+  startDate: string       // "YYYY-MM-DD"
+  endDate: string         // "YYYY-MM-DD"
+  dayStart: string        // "HH:MM" 24h
+  dayEnd: string          // "HH:MM" 24h
+  worksDescription: string
+}
+
+export type TGSType = 'BASIC_DEVICES' | 'STOP_SLOW_BAT' | 'TTL_PORTABLE' | 'FULL_CLOSURE'
+export type ControlMethod = 'PASSIVE' | 'MANUAL' | 'PTCD'
+export type SignSizeClass = 'A' | 'B' | 'C' | 'D'
+
+export type PlacedSign = {
+  code: string
+  distanceM: number        // metres from WZ start; negative = before WZ
+  approach: 'A' | 'B' | 'both' | 'side-road'
+  roadName?: string        // set for side-road signs — the name of the intersecting road
+  description: string
+  sizeClass: SignSizeClass
+}
+
+export type TGSPhaseDetail = {
+  phase: 'DAY' | 'OVERNIGHT'
+  tgsType: TGSType
+  controlMethod: ControlMethod
+  notes: string[]
+}
+
+export type IntersectionArm = {
+  wayId: string
+  name: string | null
+  classification: string
+  speedLimit: number
+  lanes: number
+  connectionNode: LatLng
+  distanceAlongWzM: number   // metres from work zone start
+  geometry: LatLng[]
+  joinSide: 'left' | 'right' // which side of the main road polyline this arm joins from
+}
+
+export type IntersectionTreatment = {
+  arm: IntersectionArm
+  treatment: 'CONTROLLER' | 'GIVE_WAY' | 'ROAD_CLOSURE'
+  autoTreatment: 'CONTROLLER' | 'GIVE_WAY' | 'ROAD_CLOSURE' // engine default before any user override
+  signsOnSideRoad: PlacedSign[]
+  additionalPersonnel: number
+  notes: string[]
+}
+
+export type TGSResult = {
+  tgsType: TGSType
+  controlMethod: ControlMethod
+  D: number
+  workZoneLength: number
+  taperLength: number
+  coneSpacingM: number
+  speedZone: {
+    enabled: boolean
+    speedKmh: number
+    startDistanceM: number
+    endDistanceM: number
+  } | null
+  advanceWarning: {
+    distanceM: number
+    levels: number
+    spacingM: number
+  }
+  phases: TGSPhaseDetail[]
+  signs: PlacedSign[]
+  ttlTiming: {
+    greenWorkS: number
+    greenThroughS: number
+    allRedS: number
+    cycleS: number
+    mode: 'MANUAL_SHUTTLE' | 'FIXED_TIME' | 'VEHICLE_ACTUATED'
+  } | null
+  personnelRequired: number
+  flashingArrowRequired: boolean
+  bufferLength: number
+  delineatorCount: number
+  complianceNotes: string[]
+  warnings: string[]
+  intersectionTreatments: IntersectionTreatment[]
+}
