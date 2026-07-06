@@ -3,8 +3,8 @@ import { APIProvider } from '@vis.gl/react-google-maps'
 import { WorkZoneMap } from './components/WorkZoneMap'
 import { Sidebar } from './components/Sidebar'
 import { TGSDiagram } from './components/TGSDiagram'
-import type { WorkZone, WorkZonePoint, RoadData, FetchStatus, RoundaboutData, Scenario, WorkParams, TGSResult, IntersectionArm, IntersectionTreatment } from './types'
-import { fetchRoadData, fetchRoundaboutArms, fetchRoundaboutByPoint, fetchIntersectingRoads } from './lib/osmFetch'
+import type { WorkZone, WorkZonePoint, RoadData, FetchStatus, RoundaboutData, WorkParams, TGSResult, IntersectionArm, IntersectionTreatment } from './types'
+import { fetchRoadData, fetchRoundaboutArms, fetchIntersectingRoads } from './lib/osmFetch'
 import { runTGSEngine } from './lib/tgsEngine'
 
 const API_KEY = import.meta.env.VITE_GOOGLE_MAPS_API_KEY as string
@@ -20,17 +20,14 @@ function defaultWorkParams(): WorkParams {
 }
 
 export default function App() {
-  const [scenario, setScenario] = useState<Scenario>('road')
   const [workZone, setWorkZone] = useState<WorkZone>(EMPTY_WORK_ZONE)
   const [placingPoint, setPlacingPoint] = useState<WorkZonePoint>('start')
   const [selectedPlace, setSelectedPlace] = useState<google.maps.places.PlaceResult | null>(null)
   const [roadData, setRoadData] = useState<RoadData | null>(null)
   const [fetchStatus, setFetchStatus] = useState<FetchStatus>('idle')
   const [mainWayIds, setMainWayIds] = useState<string[]>([])
-  const [roundaboutWayId, setRoundaboutWayId] = useState<string | null>(null)
+  const [roundaboutWayIds, setRoundaboutWayIds] = useState<string[]>([])
   const [roundaboutData, setRoundaboutData] = useState<RoundaboutData | null>(null)
-  const [roundaboutFetchStatus, setRoundaboutFetchStatus] = useState<'idle' | 'loading' | 'found' | 'not-found'>('idle')
-  const [closedSegments, setClosedSegments] = useState<number[]>([])
   const [workParams, setWorkParams] = useState<WorkParams>(defaultWorkParams)
   const [tgsResult, setTgsResult] = useState<TGSResult | null>(null)
   const [intersections, setIntersections] = useState<IntersectionArm[]>([])
@@ -53,14 +50,13 @@ export default function App() {
     const controller = new AbortController()
 
     fetchRoadData(workZone.start, workZone.end, controller.signal)
-      .then(({ roadData: data, polyline, segments, wayIds, roundaboutWayId: rabId, extendedPolyline: ext, wzStartOffsetM: offset }) => {
+      .then(({ roadData: data, polyline, segments, wayIds, roundaboutWayIds: rabIds, extendedPolyline: ext, wzStartOffsetM: offset }) => {
         setRoadData(data)
         setMainWayIds(wayIds)
         setWorkZone(wz => ({ ...wz, polyline, polylineSegments: segments }))
         setFetchStatus('loaded')
-        setRoundaboutWayId(rabId)
+        setRoundaboutWayIds(rabIds)
         setRoundaboutData(null)
-        setClosedSegments([])
         setExtendedPolyline(ext)
         setWzStartOffsetM(offset)
       })
@@ -95,41 +91,18 @@ export default function App() {
     return () => controller.abort()
   }, [mainWayIds, workZone.polyline])
 
-  // Fetch roundabout arm data once a roundabout way ID is known (road scenario auto-detect)
+  // Fetch roundabout arm data once the route is known to pass a roundabout
   useEffect(() => {
-    if (!roundaboutWayId || scenario === 'roundabout') {
-      if (scenario !== 'roundabout') setRoundaboutData(null)
+    if (roundaboutWayIds.length === 0) {
+      setRoundaboutData(null)
       return
     }
     const controller = new AbortController()
-    fetchRoundaboutArms(roundaboutWayId, controller.signal)
+    fetchRoundaboutArms(roundaboutWayIds, controller.signal)
       .then(setRoundaboutData)
       .catch(() => {})
     return () => controller.abort()
-  }, [roundaboutWayId, scenario])
-
-  // Fetch roundabout data from a single click point (roundabout scenario)
-  useEffect(() => {
-    if (scenario !== 'roundabout' || !workZone.start) {
-      return
-    }
-    setRoundaboutFetchStatus('loading')
-    setRoundaboutData(null)
-    const controller = new AbortController()
-    fetchRoundaboutByPoint(workZone.start, controller.signal)
-      .then(data => {
-        if (data) {
-          setRoundaboutData(data)
-          setRoundaboutFetchStatus('found')
-        } else {
-          setRoundaboutFetchStatus('not-found')
-        }
-      })
-      .catch(() => {
-        if (!controller.signal.aborted) setRoundaboutFetchStatus('not-found')
-      })
-    return () => controller.abort()
-  }, [scenario, workZone.start?.lat, workZone.start?.lng])
+  }, [roundaboutWayIds])
 
   function handleGenerate() {
     if (!roadData || !workZone.polyline) return
@@ -144,17 +117,9 @@ export default function App() {
     setTgsResult(runTGSEngine(roadData, workParams, workZone, intersections, newOverrides))
   }
 
-  function handleToggleSegment(idx: number) {
-    setClosedSegments(prev =>
-      prev.includes(idx) ? prev.filter(i => i !== idx) : [...prev, idx]
-    )
-  }
-
   function handleWorkZoneChange(wz: WorkZone) {
     setWorkZone(wz)
-    if (scenario === 'roundabout') {
-      setPlacingPoint(null)
-    } else if (placingPoint === 'start' && wz.end === null) {
+    if (placingPoint === 'start' && wz.end === null) {
       setPlacingPoint('end')
     } else {
       setPlacingPoint(null)
@@ -165,32 +130,14 @@ export default function App() {
     setPlacingPoint(p)
   }
 
-  function handleScenarioChange(s: Scenario) {
-    setScenario(s)
-    setWorkZone(EMPTY_WORK_ZONE)
-    setPlacingPoint(s === 'road' ? 'start' : 'roundabout')
-    setRoadData(null)
-    setFetchStatus('idle')
-    setMainWayIds([])
-    setRoundaboutWayId(null)
-    setRoundaboutData(null)
-    setRoundaboutFetchStatus('idle')
-    setClosedSegments([])
-    setIntersections([])
-    setExtendedPolyline(null)
-    setWzStartOffsetM(0)
-  }
-
   function handleClear() {
     setWorkZone(EMPTY_WORK_ZONE)
-    setPlacingPoint(scenario === 'road' ? 'start' : 'roundabout')
+    setPlacingPoint('start')
     setRoadData(null)
     setFetchStatus('idle')
     setMainWayIds([])
-    setRoundaboutWayId(null)
+    setRoundaboutWayIds([])
     setRoundaboutData(null)
-    setRoundaboutFetchStatus('idle')
-    setClosedSegments([])
     setIntersections([])
     setExtendedPolyline(null)
     setWzStartOffsetM(0)
@@ -204,15 +151,11 @@ export default function App() {
     <APIProvider apiKey={API_KEY}>
       <div className="flex h-full w-full">
         <Sidebar
-          scenario={scenario}
           workZone={workZone}
           placingPoint={placingPoint}
           roadData={roadData}
           fetchStatus={fetchStatus}
           roundaboutData={roundaboutData}
-          roundaboutFetchStatus={roundaboutFetchStatus}
-          closedSegments={closedSegments}
-          onScenarioChange={handleScenarioChange}
           onSetPlacingPoint={handleSetPlacingPoint}
           onClear={handleClear}
           onPlaceSelect={handlePlaceSelect}
@@ -225,7 +168,7 @@ export default function App() {
         />
         <main className="flex-1 relative flex flex-col overflow-hidden">
           {/* View toggle — only visible after generate */}
-          {tgsResult && scenario === 'road' && (
+          {tgsResult && (
             <div className="absolute top-3 left-1/2 -translate-x-1/2 z-20 flex gap-1 bg-gray-900 rounded-lg p-1 shadow-lg border border-gray-700">
               <button
                 onClick={() => setMainView('map')}
@@ -253,15 +196,12 @@ export default function App() {
           {/* Map view */}
           <div className={`flex-1 ${mainView === 'map' ? 'block' : 'hidden'}`}>
             <WorkZoneMap
-              scenario={scenario}
               workZone={workZone}
               onWorkZoneChange={handleWorkZoneChange}
               placingPoint={placingPoint}
               selectedPlace={selectedPlace}
               roadData={roadData}
               roundaboutData={roundaboutData}
-              closedSegments={closedSegments}
-              onToggleSegment={handleToggleSegment}
               tgsResult={tgsResult}
               extendedPolyline={extendedPolyline}
               wzStartOffsetM={wzStartOffsetM}

@@ -3,9 +3,7 @@ export type LatLng = {
   lng: number
 }
 
-export type WorkZonePoint = 'start' | 'end' | 'roundabout' | null
-
-export type Scenario = 'road' | 'roundabout'
+export type WorkZonePoint = 'start' | 'end' | null
 
 export type PolylineSegment = {
   type: 'road' | 'roundabout'

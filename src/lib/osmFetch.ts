@@ -6,7 +6,7 @@ export type OsmFetchResult = {
   polyline: LatLng[]
   segments: PolylineSegment[]
   wayIds: string[]
-  roundaboutWayId: string | null
+  roundaboutWayIds: string[]   // ring way(s) the route passes through (a ring may be split into several OSM ways)
   extendedPolyline: LatLng[]   // full road geometry beyond pins — follows actual curvature
   wzStartOffsetM: number        // metres from extendedPolyline[0] to work zone start
 }
@@ -135,13 +135,41 @@ function findSharedNode(
   return null
 }
 
-function overpassPost(query: string, signal?: AbortSignal): Promise<Response> {
-  return fetch('https://overpass-api.de/api/interpreter', {
-    method: 'POST',
-    body: `data=${encodeURIComponent(query)}`,
-    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-    signal,
-  })
+const OVERPASS_ENDPOINTS = [
+  'https://overpass-api.de/api/interpreter',
+  'https://overpass.kumi.systems/api/interpreter',
+  'https://overpass.private.coffee/api/interpreter',
+]
+
+// Statuses the public Overpass servers return when overloaded or rate-limiting
+const TRANSIENT_STATUSES = new Set([406, 429, 502, 503, 504])
+
+// The public Overpass servers reject requests intermittently under load —
+// rotate endpoints and retry transient failures before giving up.
+async function overpassPost(query: string, signal?: AbortSignal): Promise<Response> {
+  let lastResponse: Response | null = null
+  let lastError: unknown = null
+  for (let attempt = 0; attempt < 4; attempt++) {
+    const endpoint = OVERPASS_ENDPOINTS[attempt % OVERPASS_ENDPOINTS.length]
+    try {
+      const res = await fetch(endpoint, {
+        method: 'POST',
+        body: `data=${encodeURIComponent(query)}`,
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        signal,
+      })
+      if (res.ok) return res
+      lastResponse = res
+      if (!TRANSIENT_STATUSES.has(res.status)) return res
+    } catch (err) {
+      if (signal?.aborted) throw err
+      lastError = err
+    }
+    await new Promise(r => setTimeout(r, 1000 * (attempt + 1)))
+    if (signal?.aborted) throw new DOMException('Aborted', 'AbortError')
+  }
+  if (lastResponse) return lastResponse
+  throw lastError ?? new Error('Overpass unreachable')
 }
 
 // ─── Extended-polyline helpers ───────────────────────────────────────────────
@@ -206,6 +234,160 @@ function polylineLenM(pts: LatLng[]): number {
   return len
 }
 
+// ─── Roundabout ring stitching ────────────────────────────────────────────────
+// When the two pins land on roads that never touch each other, they may both
+// connect to a roundabout. OSM draws roundabout ways in the direction of
+// travel (clockwise in Australia), so the route between the two roads must
+// follow the ring's node order around — never jump across.
+
+const NODE_TOLERANCE = 1e-5
+
+function sameNode(aLat: number, aLng: number, bLat: number, bLng: number): boolean {
+  return Math.abs(aLat - bLat) < NODE_TOLERANCE && Math.abs(aLng - bLng) < NODE_TOLERANCE
+}
+
+// Chain ring ways (each drawn in travel direction) head-to-tail into one loop.
+// Returns the ordered loop without the duplicate closing node, or null if the
+// ways don't form a single unbroken chain.
+function orderRingLoop(ways: any[]): LatLng[] | null {
+  const remaining = [...ways]
+  const first = remaining.shift()
+  const nodes: LatLng[] = first.geometry.map((n: any) => ({ lat: n.lat, lng: n.lon }))
+  while (remaining.length > 0) {
+    const tail = nodes[nodes.length - 1]
+    const idx = remaining.findIndex(w => sameNode(w.geometry[0].lat, w.geometry[0].lon, tail.lat, tail.lng))
+    if (idx === -1) return null
+    const next = remaining.splice(idx, 1)[0]
+    for (const n of next.geometry.slice(1)) nodes.push({ lat: n.lat, lng: n.lon })
+  }
+  if (nodes.length > 1 && sameNode(nodes[0].lat, nodes[0].lng, nodes[nodes.length - 1].lat, nodes[nodes.length - 1].lng)) {
+    nodes.pop()
+  }
+  return nodes
+}
+
+// Index of the ring node where `wayGeom` connects to the ring — exact shared
+// node first, then proximity fallback (some arms are mapped slightly off the ring).
+function ringConnectionIdx(wayGeom: Array<{ lat: number; lon: number }>, ringNodes: LatLng[]): number | null {
+  for (const n of wayGeom) {
+    const idx = ringNodes.findIndex(r => sameNode(r.lat, r.lng, n.lat, n.lon))
+    if (idx !== -1) return idx
+  }
+  let best: number | null = null
+  let bestDist = PROX_SNAP_DEG
+  for (const n of wayGeom) {
+    for (let i = 0; i < ringNodes.length; i++) {
+      const d = Math.hypot(n.lat - ringNodes[i].lat, n.lon - ringNodes[i].lng)
+      if (d < bestDist) { bestDist = d; best = i }
+    }
+  }
+  return best
+}
+
+type RingStitchResult = {
+  polyline: LatLng[]
+  segments: PolylineSegment[]
+  extendedPolyline: LatLng[]
+  wzStartOffsetM: number
+  ringWayIds: string[]
+}
+
+async function stitchViaRoundabout(
+  startWay: any,
+  endWay: any,
+  start: LatLng,
+  end: LatLng,
+  signal?: AbortSignal,
+): Promise<RingStitchResult | null> {
+  const pad = 0.002 // ~200 m
+  const minLat = Math.min(start.lat, end.lat) - pad
+  const maxLat = Math.max(start.lat, end.lat) + pad
+  const minLng = Math.min(start.lng, end.lng) - pad
+  const maxLng = Math.max(start.lng, end.lng) + pad
+
+  const res = await overpassPost(`
+    [out:json][timeout:15];
+    way(${minLat},${minLng},${maxLat},${maxLng})[junction=roundabout];
+    out geom tags;
+  `, signal)
+  if (!res.ok) return null
+  const ringWays: any[] = ((await res.json()).elements ?? [])
+    .filter((w: any) => w.geometry && w.geometry.length >= 2)
+  if (ringWays.length === 0) return null
+
+  // Group touching ring ways into whole roundabouts
+  const visited = new Set<number>()
+  const rings: any[][] = []
+  for (let i = 0; i < ringWays.length; i++) {
+    if (visited.has(i)) continue
+    const comp = [ringWays[i]]
+    visited.add(i)
+    let grew = true
+    while (grew) {
+      grew = false
+      for (let j = 0; j < ringWays.length; j++) {
+        if (visited.has(j)) continue
+        if (comp.some(w => findSharedNode(w.geometry, ringWays[j].geometry))) {
+          comp.push(ringWays[j])
+          visited.add(j)
+          grew = true
+        }
+      }
+    }
+    rings.push(comp)
+  }
+
+  // Use the first roundabout that both roads connect to
+  for (const ring of rings) {
+    const ringNodes = orderRingLoop(ring)
+    if (!ringNodes || ringNodes.length < 3) continue
+
+    const entryIdx = ringConnectionIdx(startWay.geometry, ringNodes)
+    const exitIdx  = ringConnectionIdx(endWay.geometry, ringNodes)
+    if (entryIdx === null || exitIdx === null) continue
+
+    const entry = ringNodes[entryIdx]
+    const exit  = ringNodes[exitIdx]
+
+    // Walk the ring in travel direction from entry to exit
+    const ringPath: LatLng[] = [entry]
+    for (let i = entryIdx; i !== exitIdx; ) {
+      i = (i + 1) % ringNodes.length
+      ringPath.push(ringNodes[i])
+    }
+
+    const startGeom: LatLng[] = startWay.geometry.map((n: any) => ({ lat: n.lat, lng: n.lon }))
+    const endGeom:   LatLng[] = endWay.geometry.map((n: any) => ({ lat: n.lat, lng: n.lon }))
+
+    const startSeg = trimTowards(startGeom, start, entry)
+    const endSeg   = trimTowards(endGeom, exit, end)
+    const polyline = [...startSeg, ...ringPath.slice(1), ...endSeg.slice(1)]
+
+    const segments: PolylineSegment[] = [
+      { type: 'road', nodes: startSeg },
+      { type: 'roundabout', nodes: ringPath },
+      { type: 'road', nodes: endSeg },
+    ]
+
+    // Extended: road before the start pin + route + road after the end pin
+    const startOriented = orientGeom(startGeom, start, entry)
+    const endOriented   = orientGeom(endGeom, exit, end)
+    const approach  = nodesUpTo(startOriented, start)
+    const extension = nodesFrom(endOriented, end)
+    const extendedPolyline = [...approach, ...polyline.slice(1), ...extension.slice(1)]
+
+    return {
+      polyline,
+      segments,
+      extendedPolyline,
+      wzStartOffsetM: polylineLenM(approach),
+      ringWayIds: ring.map(w => String(w.id)),
+    }
+  }
+
+  return null
+}
+
 // ─── fetchRoadData ────────────────────────────────────────────────────────────
 
 export async function fetchRoadData(
@@ -268,6 +450,8 @@ export async function fetchRoadData(
   let polyline: LatLng[]
   let extendedPolyline: LatLng[]
   let wzStartOffsetM: number
+  let segments: PolylineSegment[] | null = null
+  let ringWayIds: string[] = []
   const wayIds: string[] = []
 
   if (startWay.id === endWay.id) {
@@ -298,22 +482,44 @@ export async function fetchRoadData(
       extendedPolyline = [...approach, ...polyline.slice(1), ...extension.slice(1)]
       wzStartOffsetM   = polylineLenM(approach)
     } else {
-      // Ways don't share a node — fall back to start way
-      const geom: LatLng[] = startWay.geometry.map((n: any) => ({ lat: n.lat, lng: n.lon }))
-      polyline = trimPolyline(geom, start, end)
-      const oriented = orientGeom(geom, start, end)
-      const { idx, t } = snapOnGeom(oriented, start)
-      wzStartOffsetM = distToSnap(oriented, idx, t)
-      extendedPolyline = oriented
+      // Ways don't touch each other — they may both connect to a roundabout
+      const viaRing = await stitchViaRoundabout(startWay, endWay, start, end, signal)
+      if (viaRing) {
+        polyline = viaRing.polyline
+        segments = viaRing.segments
+        extendedPolyline = viaRing.extendedPolyline
+        wzStartOffsetM = viaRing.wzStartOffsetM
+        ringWayIds = viaRing.ringWayIds
+      } else {
+        // No connection found — fall back to start way
+        const geom: LatLng[] = startWay.geometry.map((n: any) => ({ lat: n.lat, lng: n.lon }))
+        polyline = trimPolyline(geom, start, end)
+        const oriented = orientGeom(geom, start, end)
+        const { idx, t } = snapOnGeom(oriented, start)
+        wzStartOffsetM = distToSnap(oriented, idx, t)
+        extendedPolyline = oriented
+      }
     }
     wayIds.push(String(startWay.id), String(endWay.id))
   }
 
-  const roundaboutEl = elements.find((e: any) => e.tags?.junction === 'roundabout') ?? null
-  const roundaboutWayId = roundaboutEl ? String(roundaboutEl.id) : null
-  const segments: PolylineSegment[] = [{ type: 'road', nodes: polyline }]
+  // Prefer the ring the route actually passes through; otherwise any
+  // roundabout way that showed up near the pins
+  if (ringWayIds.length === 0) {
+    const roundaboutEl = elements.find((e: any) => e.tags?.junction === 'roundabout') ?? null
+    if (roundaboutEl) ringWayIds = [String(roundaboutEl.id)]
+  }
+  wayIds.push(...ringWayIds)
 
-  return { roadData, polyline, segments, wayIds, roundaboutWayId, extendedPolyline, wzStartOffsetM }
+  return {
+    roadData,
+    polyline,
+    segments: segments ?? [{ type: 'road', nodes: polyline }],
+    wayIds,
+    roundaboutWayIds: ringWayIds,
+    extendedPolyline,
+    wzStartOffsetM,
+  }
 }
 
 // ─── Roundabout helpers ───────────────────────────────────────────────────────
@@ -411,8 +617,14 @@ function groupArms(arms: RoundaboutArm[], center: LatLng): RoundaboutArm[] {
 // proximity-only connection to count (~20 m at Australian latitudes).
 const PROX_SNAP_DEG = 0.00018
 
-async function buildRoundaboutData(rabWay: any, signal?: AbortSignal): Promise<RoundaboutData | null> {
-  const rabGeom: LatLng[] = (rabWay.geometry ?? []).map((n: any) => ({ lat: n.lat, lng: n.lon }))
+function buildRoundaboutData(rabWays: any[], candidateArmWays: any[]): RoundaboutData | null {
+  const withGeom = rabWays.filter(w => w.geometry && w.geometry.length >= 2)
+  if (withGeom.length === 0) return null
+
+  // Ring geometry ordered in travel direction; fall back to raw concatenation
+  // if the ways don't chain cleanly (still fine for centre/arm detection)
+  const rabGeom: LatLng[] = orderRingLoop(withGeom)
+    ?? withGeom.flatMap(w => w.geometry.map((n: any) => ({ lat: n.lat, lng: n.lon })))
   if (rabGeom.length < 3) return null
 
   const center: LatLng = {
@@ -420,59 +632,28 @@ async function buildRoundaboutData(rabWay: any, signal?: AbortSignal): Promise<R
     lng: rabGeom.reduce((s, n) => s + n.lng, 0) / rabGeom.length,
   }
 
-  // Ring radius in metres — used to size the proximity search area
-  const ringRadiusM = rabGeom.reduce((s, n) => {
-    const dlat = (n.lat - center.lat) * 111320
-    const dlng = (n.lng - center.lng) * 111320 * Math.cos(center.lat * Math.PI / 180)
-    return s + Math.hypot(dlat, dlng)
-  }, 0) / rabGeom.length
-  const searchRadiusM = Math.round(ringRadiusM + 60)
-
-  // ── Run both queries in parallel ─────────────────────────────────────────
-  // Query 1: exact — ways that share an OSM node with the ring (always reliable)
-  // Query 2: proximity — all highway ways within searchRadiusM of center
-  //   (catches arms not topologically connected to the ring in OSM)
-  const [exactRes, proximityRes] = await Promise.all([
-    overpassPost(`
-      [out:json][timeout:15];
-      way(${rabWay.id}) -> .rab;
-      node(w.rab) -> .rabnodes;
-      way(bn.rabnodes)[highway][junction!=roundabout];
-      out geom tags;
-    `, signal),
-    overpassPost(`
-      [out:json][timeout:15];
-      way(around:${searchRadiusM},${center.lat},${center.lng})[highway~"${HIGHWAY_RE}"][junction!=roundabout];
-      out geom tags;
-    `, signal),
-  ])
-  if (!exactRes.ok)     throw new Error(`Overpass error ${exactRes.status}`)
-  if (!proximityRes.ok) throw new Error(`Overpass error ${proximityRes.status}`)
-
-  const exactWays: any[]     = (await exactRes.json()).elements     ?? []
-  const proximityWays: any[] = (await proximityRes.json()).elements ?? []
-
-  // Merge: exact ways first, then any proximity-only ways not already found
-  const exactIds = new Set(exactWays.map((w: any) => String(w.id)))
-  const allWays  = [
-    ...exactWays,
-    ...proximityWays.filter((w: any) => !exactIds.has(String(w.id))),
-  ]
+  const allWays = candidateArmWays
 
   // ── Build arms ───────────────────────────────────────────────────────────
+  const NON_VEHICLE = new Set(['footway', 'path', 'cycleway', 'steps', 'pedestrian', 'bridleway', 'corridor'])
   const arms: RoundaboutArm[] = []
   for (const armWay of allWays) {
     if (!armWay.geometry || armWay.geometry.length < 2) continue
+    if (NON_VEHICLE.has(armWay.tags?.highway)) continue
     const armGeom: Array<{ lat: number; lon: number }> = armWay.geometry
 
-    // Try exact shared node first
-    let shared: { lat: number; lon: number } | null = findSharedNode(rabWay.geometry, armGeom)
+    // Try exact shared node first — against every ring way
+    let shared: { lat: number; lon: number } | null = null
+    for (const rw of withGeom) {
+      shared = findSharedNode(rw.geometry, armGeom)
+      if (shared) break
+    }
 
-    // Proximity fallback: find the arm node closest to the ring polyline
+    // Proximity fallback: find the arm node closest to any ring way
     if (!shared) {
       let bestDist = PROX_SNAP_DEG
       for (const node of armGeom) {
-        const d = minDistToWay({ lat: node.lat, lng: node.lon }, rabWay.geometry)
+        const d = Math.min(...withGeom.map(rw => minDistToWay({ lat: node.lat, lng: node.lon }, rw.geometry)))
         if (d < bestDist) { bestDist = d; shared = node }
       }
     }
@@ -513,135 +694,39 @@ async function buildRoundaboutData(rabWay: any, signal?: AbortSignal): Promise<R
   }
 
   if (arms.length === 0) return null
-  return { type: 'full', wayId: String(rabWay.id), center, nodes: rabGeom, arms: groupArms(arms, center) }
+  return { type: 'full', wayId: String(withGeom[0].id), center, nodes: rabGeom, arms: groupArms(arms, center) }
 }
 
-// ─── Mini-roundabout helpers ──────────────────────────────────────────────────
-
-// Build RoundaboutData for a highway=mini_roundabout OSM node.
-// Arms are found by querying all ways that share this node.
-// There is no ring geometry — the overlay synthesises a fixed-radius circle.
-async function buildMiniRoundaboutData(miniNode: any, signal?: AbortSignal): Promise<RoundaboutData | null> {
-  const center: LatLng = { lat: miniNode.lat, lng: miniNode.lon }
-
+export async function fetchRoundaboutArms(
+  wayIds: string[],
+  signal?: AbortSignal,
+): Promise<RoundaboutData> {
+  // One round-trip: expand to the whole ring (a roundabout can be split into
+  // several OSM ways; three rounds reaches any arc), then grab candidate arms —
+  // ways sharing a ring node plus ways within 40 m (arms mapped slightly off
+  // the ring in OSM).
   const query = `
     [out:json][timeout:15];
-    node(${miniNode.id}) -> .mini;
-    way(bn.mini)[highway];
+    way(id:${wayIds.join(',')}) -> .r;
+    node(w.r) -> .n; way(bn.n)[junction=roundabout] -> .r;
+    node(w.r) -> .n; way(bn.n)[junction=roundabout] -> .r;
+    node(w.r) -> .n; way(bn.n)[junction=roundabout] -> .r;
+    node(w.r) -> .n;
+    .r out geom tags;
+    (
+      way(bn.n)[highway][junction!=roundabout];
+      way(around.r:40)[highway~"${HIGHWAY_RE}"][junction!=roundabout];
+    );
     out geom tags;
   `
   const res = await overpassPost(query, signal)
   if (!res.ok) throw new Error(`Overpass error ${res.status}`)
   const json = await res.json()
-  const armWays: any[] = json.elements ?? []
-
-  const arms: RoundaboutArm[] = []
-  for (const armWay of armWays) {
-    if (!armWay.geometry || armWay.geometry.length < 2) continue
-    const armGeom: Array<{ lat: number; lon: number }> = armWay.geometry
-
-    // The connection node is the arm node closest to the mini_roundabout node
-    let shared: { lat: number; lon: number } | null = null
-    let minDist = Infinity
-    for (const n of armGeom) {
-      const d = Math.hypot(n.lat - miniNode.lat, n.lon - miniNode.lon)
-      if (d < minDist) { minDist = d; shared = n }
-    }
-    if (!shared || minDist > 1e-4) continue  // not actually connected
-
-    const connectionNode: LatLng = { lat: shared.lat, lng: shared.lon }
-    const angleFromCenter = Math.atan2(
-      connectionNode.lng - center.lng,
-      connectionNode.lat - center.lat,
-    ) * 180 / Math.PI
-
-    const armTags      = armWay.tags ?? {}
-    const armHighway: string = armTags.highway ?? 'residential'
-    const armDef       = NSW_DEFAULTS[armHighway] ?? NSW_DEFAULTS.residential
-    const armSpeed     = parseSpeedLimit(armTags.maxspeed, armHighway)
-    const armLanesRaw  = armTags.lanes ? parseInt(armTags.lanes, 10) : NaN
-    const isOneWay     = armTags.oneway === 'yes' || armTags.oneway === '1'
-
-    let oneWayDir: 'entry' | 'exit' | null = null
-    if (isOneWay) {
-      const first = armGeom[0]
-      const firstIsConn = Math.abs(first.lat - shared.lat) < 1e-5 && Math.abs(first.lon - shared.lon) < 1e-5
-      oneWayDir = firstIsConn ? 'exit' : 'entry'
-    }
-
-    arms.push({
-      wayId: String(armWay.id),
-      name: armTags.name ?? null,
-      lanes: !isNaN(armLanesRaw) && armLanesRaw > 0 ? armLanesRaw : armDef.lanes,
-      speedLimit: armSpeed.value,
-      speedLimitIsDefault: armSpeed.isDefault,
-      isOneWay,
-      oneWayDir,
-      connectionNode,
-      angleFromCenter,
-    })
-  }
-
-  if (arms.length === 0) return null
-  const groupedArms = groupArms(arms, center)
-
-  return {
-    type: 'mini',
-    wayId: String(miniNode.id),  // node ID stored in wayId field
-    center,
-    nodes: [],                   // no ring geometry; overlay synthesises a circle
-    arms: groupedArms,
-  }
-}
-
-export async function fetchRoundaboutByPoint(
-  point: LatLng,
-  signal?: AbortSignal,
-): Promise<RoundaboutData | null> {
-  // 1. Try full roundabout (junction=roundabout way)
-  const query = `[out:json][timeout:15]; way(around:100,${point.lat},${point.lng})[junction=roundabout]; out geom tags;`
-  const res = await overpassPost(query, signal)
-  if (!res.ok) throw new Error(`Overpass error ${res.status}`)
-  const json = await res.json()
   const elements: any[] = json.elements ?? []
-
-  if (elements.length > 0) {
-    let best = elements[0], bestDist = Infinity
-    for (const e of elements) {
-      if (!e.geometry) continue
-      const d = minDistToWay(point, e.geometry)
-      if (d < bestDist) { bestDist = d; best = e }
-    }
-    return buildRoundaboutData(best, signal)
-  }
-
-  // 2. Fallback: try mini_roundabout node within 50 m
-  const miniQuery = `[out:json][timeout:15]; node(around:50,${point.lat},${point.lng})[highway=mini_roundabout]; out;`
-  const miniRes = await overpassPost(miniQuery, signal)
-  if (!miniRes.ok) throw new Error(`Overpass error ${miniRes.status}`)
-  const miniJson = await miniRes.json()
-  const miniElements: any[] = miniJson.elements ?? []
-  if (miniElements.length === 0) return null
-
-  let bestMini = miniElements[0], bestMiniDist = Infinity
-  for (const e of miniElements) {
-    const d = Math.hypot(e.lat - point.lat, e.lon - point.lng)
-    if (d < bestMiniDist) { bestMiniDist = d; bestMini = e }
-  }
-  return buildMiniRoundaboutData(bestMini, signal)
-}
-
-export async function fetchRoundaboutArms(
-  wayId: string,
-  signal?: AbortSignal,
-): Promise<RoundaboutData> {
-  const query = `[out:json][timeout:15]; way(${wayId}); out geom tags;`
-  const res = await overpassPost(query, signal)
-  if (!res.ok) throw new Error(`Overpass error ${res.status}`)
-  const json = await res.json()
-  const elements: any[] = json.elements ?? []
-  if (elements.length === 0) throw new Error('Roundabout way not found')
-  const result = await buildRoundaboutData(elements[0], signal)
+  const ringWays = elements.filter(e => e.tags?.junction === 'roundabout')
+  const armWays  = elements.filter(e => e.tags?.junction !== 'roundabout')
+  if (ringWays.length === 0) throw new Error('Roundabout way not found')
+  const result = buildRoundaboutData(ringWays, armWays)
   if (!result) throw new Error('Could not build roundabout data')
   return result
 }

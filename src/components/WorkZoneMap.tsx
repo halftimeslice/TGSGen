@@ -9,18 +9,15 @@ import {
 import { LaneSideOverlay } from './LaneSideOverlay'
 import { RoundaboutOverlay } from './RoundaboutOverlay'
 import { TGSMapOverlay } from './TGSMapOverlay'
-import type { WorkZone, WorkZonePoint, LatLng, RoundaboutData, RoadData, Scenario, TGSResult } from '../types'
+import type { WorkZone, WorkZonePoint, LatLng, RoundaboutData, RoadData, TGSResult } from '../types'
 
 type Props = {
-  scenario: Scenario
   workZone: WorkZone
   onWorkZoneChange: (wz: WorkZone) => void
   placingPoint: WorkZonePoint
   selectedPlace: google.maps.places.PlaceResult | null
   roadData: RoadData | null
   roundaboutData: RoundaboutData | null
-  closedSegments: number[]
-  onToggleSegment: (idx: number) => void
   tgsResult: TGSResult | null
   extendedPolyline: LatLng[] | null
   wzStartOffsetM: number
@@ -45,18 +42,14 @@ const NSW_CENTER: LatLng = { lat: -33.8688, lng: 151.2093 }
 const YELLOW = { bg: '#eab308', border: '#a16207', glyph: '#fff' }
 
 
-export function WorkZoneMap({ scenario, workZone, onWorkZoneChange, placingPoint, selectedPlace, roadData, roundaboutData, closedSegments, onToggleSegment, tgsResult, extendedPolyline, wzStartOffsetM }: Props) {
+export function WorkZoneMap({ workZone, onWorkZoneChange, placingPoint, selectedPlace, roadData, roundaboutData, tgsResult, extendedPolyline, wzStartOffsetM }: Props) {
   const [hoverPos, setHoverPos] = useState<LatLng | null>(null)
 
   const handleClick = useCallback(
     (e: MapMouseEvent) => {
       if (!placingPoint || !e.detail.latLng) return
       const pos: LatLng = { lat: e.detail.latLng.lat, lng: e.detail.latLng.lng }
-      if (placingPoint === 'roundabout') {
-        onWorkZoneChange({ ...workZone, start: pos })
-      } else {
-        onWorkZoneChange({ ...workZone, [placingPoint]: pos, closedSide: null, polyline: null })
-      }
+      onWorkZoneChange({ ...workZone, [placingPoint]: pos, closedSide: null, polyline: null })
     },
     [placingPoint, workZone, onWorkZoneChange],
   )
@@ -80,7 +73,7 @@ export function WorkZoneMap({ scenario, workZone, onWorkZoneChange, placingPoint
   )
 
   const cursor = placingPoint ? 'crosshair' : 'grab'
-  const showOverlay = scenario === 'road' && workZone.start !== null && workZone.end !== null && workZone.polyline !== null
+  const showOverlay = workZone.start !== null && workZone.end !== null && workZone.polyline !== null
 
   return (
     <Map
@@ -109,13 +102,7 @@ export function WorkZoneMap({ scenario, workZone, onWorkZoneChange, placingPoint
         />
       )}
 
-      {roundaboutData && (
-        <RoundaboutOverlay
-          roundaboutData={roundaboutData}
-          closedSegments={closedSegments}
-          onToggleSegment={onToggleSegment}
-        />
-      )}
+      {roundaboutData && <RoundaboutOverlay roundaboutData={roundaboutData} />}
 
       {tgsResult && workZone.polyline && workZone.polyline.length >= 2 && (
         <TGSMapOverlay

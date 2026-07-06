@@ -216,9 +216,6 @@ export function TGSDiagram({ tgsResult, workParams, roadData }: Props) {
     // Work zone closed side fill
     const wzX1 = mToPx(-taperLen)
     const wzX2 = mToPx(wzLen + taperLen)
-    const closedY1 = tgsResult.tgsType !== 'FULL_CLOSURE'
-      ? (tgsResult.signs.some(s => s.code.startsWith('T5-4-right')) ? ROAD_Y : ROAD_Y - LANE_GAP)
-      : ROAD_Y - LANE_GAP
     roadElems.push(
       <rect key="wz-fill" x={wzX1} y={ROAD_Y - LANE_GAP} width={wzX2 - wzX1} height={LANE_GAP * 2}
         fill="#dc2626" opacity={0.3} />

@@ -1,4 +1,4 @@
-import type { WorkZone, WorkZonePoint, RoadData, FetchStatus, RoundaboutData, Scenario, WorkParams, TGSResult, IntersectionTreatment } from '../types'
+import type { WorkZone, WorkZonePoint, RoadData, FetchStatus, RoundaboutData, WorkParams, TGSResult, IntersectionTreatment } from '../types'
 import { SearchBar } from './SearchBar'
 import { SignIcon } from './SignIcon'
 
@@ -329,18 +329,14 @@ function WorkParamsPanel({ workParams, classification, onChange }: {
 }
 
 type Props = {
-  scenario: Scenario
   workZone: WorkZone
   placingPoint: WorkZonePoint
   roadData: RoadData | null
   fetchStatus: FetchStatus
   roundaboutData: RoundaboutData | null
-  roundaboutFetchStatus: 'idle' | 'loading' | 'found' | 'not-found'
-  closedSegments: number[]
   workParams: WorkParams
   tgsResult: TGSResult | null
   treatmentOverrides: Record<string, IntersectionTreatment['treatment']>
-  onScenarioChange: (s: Scenario) => void
   onSetPlacingPoint: (p: WorkZonePoint) => void
   onClear: () => void
   onPlaceSelect: (place: google.maps.places.PlaceResult) => void
@@ -386,10 +382,9 @@ function RoadDataPanel({ data }: { data: RoadData }) {
   )
 }
 
-export function Sidebar({ scenario, workZone, placingPoint, roadData, fetchStatus, roundaboutData, roundaboutFetchStatus, closedSegments, workParams, tgsResult, treatmentOverrides, onScenarioChange, onSetPlacingPoint, onClear, onPlaceSelect, onWorkParamsChange, onTreatmentOverride, onGenerate }: Props) {
+export function Sidebar({ workZone, placingPoint, roadData, fetchStatus, roundaboutData, workParams, tgsResult, treatmentOverrides, onSetPlacingPoint, onClear, onPlaceSelect, onWorkParamsChange, onTreatmentOverride, onGenerate }: Props) {
   const bothPinsSet = workZone.start !== null && workZone.end !== null
   const workZoneDefined = bothPinsSet && workZone.closedSide !== null
-  const roundaboutReady = scenario === 'roundabout' && roundaboutFetchStatus === 'found' && roundaboutData !== null
 
   return (
     <aside className="w-80 bg-gray-900 text-white flex flex-col h-full overflow-y-auto shrink-0">
@@ -408,82 +403,28 @@ export function Sidebar({ scenario, workZone, placingPoint, roadData, fetchStatu
             1. Define Work Zone
           </h2>
 
-          {/* Scenario selector */}
-          <div className="flex gap-2 mb-3">
-            {(['road', 'roundabout'] as const).map(s => (
+          <p className="text-xs text-gray-400 mb-3">
+            Click a button then click the map to place each end of the work zone.
+            Roundabouts on the route are detected automatically.
+          </p>
+          <div className="flex flex-col gap-2">
+            {(['start', 'end'] as const).map((point) => (
               <button
-                key={s}
-                onClick={() => onScenarioChange(s)}
-                className={`flex-1 px-3 py-1.5 rounded text-xs font-semibold transition-colors ${
-                  scenario === s
+                key={point}
+                onClick={() => onSetPlacingPoint(placingPoint === point ? null : point)}
+                className={`flex items-center gap-2 px-3 py-2 rounded text-sm font-medium transition-colors ${
+                  placingPoint === point
                     ? 'bg-yellow-600 text-white ring-2 ring-yellow-400'
-                    : 'bg-gray-700 hover:bg-gray-600 text-gray-300'
+                    : 'bg-gray-700 hover:bg-gray-600 text-gray-200'
                 }`}
               >
-                {s === 'road' ? 'Road' : 'Roundabout'}
+                <span className="w-3 h-3 rounded-full bg-yellow-400 shrink-0" />
+                {workZone[point]
+                  ? `Move ${point === 'start' ? 'Start' : 'End'} Point`
+                  : `Place ${point === 'start' ? 'Start' : 'End'} Point`}
               </button>
             ))}
           </div>
-
-          {/* Road scenario pin buttons */}
-          {scenario === 'road' && (
-            <>
-              <p className="text-xs text-gray-400 mb-3">
-                Click a button then click the map to place each end of the work zone.
-              </p>
-              <div className="flex flex-col gap-2">
-                {(['start', 'end'] as const).map((point) => (
-                  <button
-                    key={point}
-                    onClick={() => onSetPlacingPoint(placingPoint === point ? null : point)}
-                    className={`flex items-center gap-2 px-3 py-2 rounded text-sm font-medium transition-colors ${
-                      placingPoint === point
-                        ? 'bg-yellow-600 text-white ring-2 ring-yellow-400'
-                        : 'bg-gray-700 hover:bg-gray-600 text-gray-200'
-                    }`}
-                  >
-                    <span className="w-3 h-3 rounded-full bg-yellow-400 shrink-0" />
-                    {workZone[point]
-                      ? `Move ${point === 'start' ? 'Start' : 'End'} Point`
-                      : `Place ${point === 'start' ? 'Start' : 'End'} Point`}
-                  </button>
-                ))}
-
-              </div>
-            </>
-          )}
-
-          {/* Roundabout scenario pin button */}
-          {scenario === 'roundabout' && (
-            <>
-              <p className="text-xs text-gray-400 mb-3">
-                Click the button then click on or near the roundabout on the map.
-              </p>
-              <div className="flex flex-col gap-2">
-                <button
-                  onClick={() => onSetPlacingPoint(placingPoint === 'roundabout' ? null : 'roundabout')}
-                  className={`flex items-center gap-2 px-3 py-2 rounded text-sm font-medium transition-colors ${
-                    placingPoint === 'roundabout'
-                      ? 'bg-yellow-600 text-white ring-2 ring-yellow-400'
-                      : 'bg-gray-700 hover:bg-gray-600 text-gray-200'
-                  }`}
-                >
-                  <span className="w-3 h-3 rounded-full bg-yellow-400 shrink-0" />
-                  {workZone.start ? 'Move Roundabout Pin' : 'Place Roundabout Pin'}
-                </button>
-
-                {roundaboutFetchStatus === 'loading' && (
-                  <div className="flex items-center gap-2 px-3 py-2 rounded text-sm bg-gray-800 text-gray-400">
-                    <span className="w-3 h-3 rounded-full border-2 border-gray-500 border-t-yellow-400 animate-spin shrink-0" />
-                    Detecting roundabout…
-                  </div>
-                )}
-                {roundaboutFetchStatus === 'not-found' && (
-                  <p className="text-xs text-amber-400 px-1">No roundabout found nearby — try clicking closer to the centre.</p>
-                )}
-              </div>
-            </>
-          )}
 
           {(workZone.start || workZone.end) && (
             <button
@@ -495,8 +436,8 @@ export function Sidebar({ scenario, workZone, placingPoint, roadData, fetchStatu
           )}
         </section>
 
-        {/* Section 2: Select Work Zone Side (road only) */}
-        {scenario === 'road' && bothPinsSet && workZone.closedSide === null && (
+        {/* Section 2: Select Work Zone Side */}
+        {bothPinsSet && workZone.closedSide === null && (
           <section className="border-t border-gray-700 pt-4">
             <h2 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">
               2. Select Work Zone Side
@@ -509,57 +450,15 @@ export function Sidebar({ scenario, workZone, placingPoint, roadData, fetchStatu
           </section>
         )}
 
-        {/* Section 2: Roundabout segments (roundabout scenario) */}
-        {roundaboutReady && (
+        {/* Roundabout detected on the route (auto-detect) */}
+        {roundaboutData && (
           <section className="border-t border-gray-700 pt-4">
             <h2 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">
-              2. Roundabout Segments
+              Roundabout Detected
             </h2>
             <p className="text-xs text-gray-400 mb-3">
-              {roundaboutData!.arms.length}-arm roundabout. Click segments on the map to mark them{' '}
-              <span className="text-red-400 font-medium">closed</span>. Unselected segments are{' '}
-              <span className="text-green-400 font-medium">open</span>.
-            </p>
-            <div className="rounded bg-gray-800 divide-y divide-gray-700 text-xs">
-              {roundaboutData!.arms.map((arm, i) => (
-                <div key={arm.wayId + i} className="px-3 py-2">
-                  <div className="flex justify-between items-center">
-                    <span className="text-gray-300 font-medium">
-                      {arm.name ?? `Arm ${i + 1}`}
-                      {arm.isOneWay && (
-                        <span className="ml-1 text-amber-400 font-normal">
-                          ({arm.oneWayDir === 'entry' ? '→ in' : '← out'})
-                        </span>
-                      )}
-                    </span>
-                  </div>
-                  <div className="flex gap-4 mt-0.5 text-gray-400">
-                    <span>{arm.lanes} lane{arm.lanes !== 1 ? 's' : ''}</span>
-                    <span>
-                      {arm.speedLimit} km/h{arm.speedLimitIsDefault && <span className="ml-1 text-amber-400">(default)</span>}
-                    </span>
-                  </div>
-                </div>
-              ))}
-            </div>
-            {closedSegments.length > 0 && (
-              <p className="mt-2 text-xs text-red-400">
-                {closedSegments.length} segment{closedSegments.length !== 1 ? 's' : ''} closed.
-              </p>
-            )}
-          </section>
-        )}
-
-        {/* Section 2b: Roundabout Segments (road scenario auto-detect) */}
-        {scenario === 'road' && roundaboutData && (
-          <section className="border-t border-gray-700 pt-4">
-            <h2 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">
-              2b. Roundabout Segments
-            </h2>
-            <p className="text-xs text-gray-400 mb-3">
-              {roundaboutData.arms.length}-arm roundabout detected. Click segments on the map to
-              mark them <span className="text-red-400 font-medium">closed</span>. Unselected
-              segments are <span className="text-green-400 font-medium">open</span>.
+              {roundaboutData.arms.length}-arm roundabout on the selected route. Its full layout
+              is passed to the TGS generation automatically.
             </p>
             <div className="rounded bg-gray-800 divide-y divide-gray-700 text-xs">
               {roundaboutData.arms.map((arm, i) => (
@@ -583,16 +482,11 @@ export function Sidebar({ scenario, workZone, placingPoint, roadData, fetchStatu
                 </div>
               ))}
             </div>
-            {closedSegments.length > 0 && (
-              <p className="mt-2 text-xs text-red-400">
-                {closedSegments.length} segment{closedSegments.length !== 1 ? 's' : ''} closed.
-              </p>
-            )}
           </section>
         )}
 
-        {/* Section 3: Road Data (road scenario only) */}
-        {scenario === 'road' && bothPinsSet && (
+        {/* Section 3: Road Data */}
+        {bothPinsSet && (
           <section className="border-t border-gray-700 pt-4">
             <h2 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">
               {workZoneDefined ? '3.' : '—'} Road Data
@@ -617,37 +511,8 @@ export function Sidebar({ scenario, workZone, placingPoint, roadData, fetchStatu
           </section>
         )}
 
-        {/* Section 3: Work Details (roundabout scenario) */}
-        {roundaboutReady && (
-          <section className="border-t border-gray-700 pt-4">
-            <h2 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">
-              3. Work Details
-            </h2>
-            <WorkParamsPanel
-              workParams={workParams}
-              classification={roundaboutData!.arms[0]?.wayId ? 'residential' : 'residential'}
-              onChange={onWorkParamsChange}
-            />
-          </section>
-        )}
-
-        {/* Section 4: Generate TGS (roundabout scenario) */}
-        {roundaboutReady && (
-          <section className="border-t border-gray-700 pt-4">
-            <h2 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">
-              4. Generate TGS
-            </h2>
-            <button
-              disabled
-              className="w-full px-3 py-2 rounded text-sm font-medium bg-gray-700 text-gray-500 cursor-not-allowed"
-            >
-              Roundabout TGS — coming soon
-            </button>
-          </section>
-        )}
-
-        {/* Section 4: Work Details (road scenario) */}
-        {scenario === 'road' && workZoneDefined && (
+        {/* Section 4: Work Details */}
+        {workZoneDefined && (
           <section className="border-t border-gray-700 pt-4">
             <h2 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">
               4. Work Details
@@ -660,8 +525,8 @@ export function Sidebar({ scenario, workZone, placingPoint, roadData, fetchStatu
           </section>
         )}
 
-        {/* Section 5: Generate TGS (road scenario) */}
-        {scenario === 'road' && workZoneDefined && (
+        {/* Section 5: Generate TGS */}
+        {workZoneDefined && (
           <section className="border-t border-gray-700 pt-4">
             <h2 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">
               5. Generate TGS
@@ -687,7 +552,7 @@ export function Sidebar({ scenario, workZone, placingPoint, roadData, fetchStatu
         )}
 
         {/* TGS Result */}
-        {tgsResult && scenario === 'road' && (
+        {tgsResult && (
           <section className="border-t border-gray-700 pt-4">
             <h2 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">
               TGS Output
