@@ -57,12 +57,30 @@ export type RoundaboutData = {
   arms: RoundaboutArm[]
 }
 
+export type WorkType =
+  | 'LANE_CLOSURE'        // lane closure, alternating traffic
+  | 'LANE_MERGE'          // lane merge on multi-lane road (taper only)
+  | 'FULL_CLOSURE'        // full road closure with detour
+  | 'INTERSECTION_WORKS'  // works at an intersection
+  | 'SHOULDER_VERGE'      // shoulder / verge works, no lane closed
+  | 'KERBSIDE_PARKING'    // kerbside / parking lane closure
+  | 'FOOTPATH_CLOSURE'    // footpath closure + pedestrian diversion
+  | 'BIKE_SHARED_PATH'    // bike lane / shared path works
+  | 'OTHER'
+
+export type AffectedPart = 'road' | 'footpath' | 'both'
+
 export type WorkParams = {
+  workType: WorkType
+  affected: AffectedPart
+  isMobile: boolean       // mobile works (line marking, mowing, sweeping) vs stationary
   startDate: string       // "YYYY-MM-DD"
   endDate: string         // "YYYY-MM-DD"
   dayStart: string        // "HH:MM" 24h
   dayEnd: string          // "HH:MM" 24h
   worksDescription: string
+  tgsNumber: string
+  engineerName: string
 }
 
 export type TGSType = 'BASIC_DEVICES' | 'STOP_SLOW_BAT' | 'TTL_PORTABLE' | 'FULL_CLOSURE'

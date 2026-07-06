@@ -1,4 +1,4 @@
-import type { WorkZone, WorkZonePoint, RoadData, FetchStatus, RoundaboutData, WorkParams, TGSResult, IntersectionTreatment } from '../types'
+import type { WorkZone, WorkZonePoint, RoadData, FetchStatus, RoundaboutData, WorkParams, WorkType, AffectedPart, TGSResult, IntersectionTreatment } from '../types'
 import { SearchBar } from './SearchBar'
 import { SignIcon } from './SignIcon'
 
@@ -239,6 +239,24 @@ function TGSResultPanel({
   )
 }
 
+const WORK_TYPE_LABEL: Record<WorkType, string> = {
+  LANE_CLOSURE:       'Lane closure (alternating traffic)',
+  LANE_MERGE:         'Lane merge (multi-lane road)',
+  FULL_CLOSURE:       'Full road closure + detour',
+  INTERSECTION_WORKS: 'Works at an intersection',
+  SHOULDER_VERGE:     'Shoulder / verge works',
+  KERBSIDE_PARKING:   'Kerbside / parking lane',
+  FOOTPATH_CLOSURE:   'Footpath closure',
+  BIKE_SHARED_PATH:   'Bike lane / shared path',
+  OTHER:              'Other',
+}
+
+const AFFECTED_LABEL: Record<AffectedPart, string> = {
+  road:     'Road',
+  footpath: 'Footpath',
+  both:     'Both',
+}
+
 function WorkParamsPanel({ workParams, classification, onChange }: {
   workParams: WorkParams
   classification: string
@@ -251,6 +269,60 @@ function WorkParamsPanel({ workParams, classification, onChange }: {
 
   return (
     <div className="flex flex-col gap-3">
+      <div>
+        <label className="text-xs text-gray-400 block mb-1">Work type</label>
+        <select
+          value={workParams.workType}
+          onChange={e => onChange({ ...workParams, workType: e.target.value as WorkType })}
+          className="w-full bg-gray-800 text-white text-xs rounded px-2 py-1.5 border border-gray-700 focus:outline-none focus:ring-1 focus:ring-yellow-400"
+        >
+          {(Object.keys(WORK_TYPE_LABEL) as WorkType[]).map(t => (
+            <option key={t} value={t}>{WORK_TYPE_LABEL[t]}</option>
+          ))}
+        </select>
+      </div>
+
+      <div>
+        <label className="text-xs text-gray-400 block mb-1">What&apos;s affected</label>
+        <div className="flex gap-2">
+          {(Object.keys(AFFECTED_LABEL) as AffectedPart[]).map(a => (
+            <button
+              key={a}
+              onClick={() => onChange({ ...workParams, affected: a })}
+              className={`flex-1 px-2 py-1.5 rounded text-xs font-semibold transition-colors ${
+                workParams.affected === a
+                  ? 'bg-yellow-600 text-white ring-2 ring-yellow-400'
+                  : 'bg-gray-700 hover:bg-gray-600 text-gray-300'
+              }`}
+            >
+              {AFFECTED_LABEL[a]}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <div>
+        <label className="text-xs text-gray-400 block mb-1">Crew movement</label>
+        <div className="flex gap-2">
+          {([false, true] as const).map(mobile => (
+            <button
+              key={String(mobile)}
+              onClick={() => onChange({ ...workParams, isMobile: mobile })}
+              className={`flex-1 px-2 py-1.5 rounded text-xs font-semibold transition-colors ${
+                workParams.isMobile === mobile
+                  ? 'bg-yellow-600 text-white ring-2 ring-yellow-400'
+                  : 'bg-gray-700 hover:bg-gray-600 text-gray-300'
+              }`}
+            >
+              {mobile ? 'Mobile works' : 'Stationary'}
+            </button>
+          ))}
+        </div>
+        {workParams.isMobile && (
+          <p className="text-xs text-gray-500 mt-1">Line marking, mowing, sweeping — the work zone moves along the road.</p>
+        )}
+      </div>
+
       <div>
         <label className="text-xs text-gray-400 block mb-1">Works period</label>
         <div className="flex items-center gap-2">
@@ -322,6 +394,28 @@ function WorkParamsPanel({ workParams, classification, onChange }: {
           value={workParams.worksDescription}
           onChange={e => onChange({ ...workParams, worksDescription: e.target.value })}
           className="w-full bg-gray-800 text-white text-xs rounded px-2 py-1.5 border border-gray-700 focus:outline-none focus:ring-1 focus:ring-yellow-400 resize-none placeholder-gray-600"
+        />
+      </div>
+
+      <div>
+        <label className="text-xs text-gray-400 block mb-1">TGS number</label>
+        <input
+          type="text"
+          placeholder="e.g. TGS-2026-014"
+          value={workParams.tgsNumber}
+          onChange={e => onChange({ ...workParams, tgsNumber: e.target.value })}
+          className="w-full bg-gray-800 text-white text-xs rounded px-2 py-1.5 border border-gray-700 focus:outline-none focus:ring-1 focus:ring-yellow-400 placeholder-gray-600"
+        />
+      </div>
+
+      <div>
+        <label className="text-xs text-gray-400 block mb-1">Engineer name</label>
+        <input
+          type="text"
+          placeholder="Prepared by"
+          value={workParams.engineerName}
+          onChange={e => onChange({ ...workParams, engineerName: e.target.value })}
+          className="w-full bg-gray-800 text-white text-xs rounded px-2 py-1.5 border border-gray-700 focus:outline-none focus:ring-1 focus:ring-yellow-400 placeholder-gray-600"
         />
       </div>
     </div>
@@ -511,11 +605,11 @@ export function Sidebar({ workZone, placingPoint, roadData, fetchStatus, roundab
           </section>
         )}
 
-        {/* Section 4: Work Details */}
+        {/* Section 4: Closure Details */}
         {workZoneDefined && (
           <section className="border-t border-gray-700 pt-4">
             <h2 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">
-              4. Work Details
+              4. Closure Details
             </h2>
             <WorkParamsPanel
               workParams={workParams}

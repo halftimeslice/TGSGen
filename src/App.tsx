@@ -16,7 +16,18 @@ function defaultWorkParams(): WorkParams {
   const start = today.toISOString().split('T')[0]
   const end = new Date(today)
   end.setDate(end.getDate() + 6)
-  return { startDate: start, endDate: end.toISOString().split('T')[0], dayStart: '07:00', dayEnd: '17:00', worksDescription: '' }
+  return {
+    workType: 'LANE_CLOSURE',
+    affected: 'road',
+    isMobile: false,
+    startDate: start,
+    endDate: end.toISOString().split('T')[0],
+    dayStart: '07:00',
+    dayEnd: '17:00',
+    worksDescription: '',
+    tgsNumber: '',
+    engineerName: '',
+  }
 }
 
 export default function App() {
