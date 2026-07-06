@@ -1,4 +1,5 @@
 import type { WorkZone, WorkZonePoint, RoadData, FetchStatus, RoundaboutData, WorkParams, WorkType, AffectedPart, TGSResult, IntersectionTreatment } from '../types'
+import type { GenerationState } from '../App'
 import { SearchBar } from './SearchBar'
 import { SignIcon } from './SignIcon'
 
@@ -61,13 +62,9 @@ const TREATMENT_LABEL: Record<IntersectionTreatment['treatment'], string> = {
 function TGSResultPanel({
   result,
   worksDescription,
-  treatmentOverrides,
-  onTreatmentOverride,
 }: {
   result: TGSResult
   worksDescription: string
-  treatmentOverrides: Record<string, IntersectionTreatment['treatment']>
-  onTreatmentOverride: (wayId: string, treatment: IntersectionTreatment['treatment']) => void
 }) {
   // Deduplicate signs — group by code+description so recovery markers don't merge with taper markers
   const uniqueSigns = result.signs.reduce<Array<{ code: string; description: string; count: number }>>((acc, s) => {
@@ -167,7 +164,6 @@ function TGSResultPanel({
           <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-1">Intersecting Roads</p>
           <div className="flex flex-col gap-2">
             {result.intersectionTreatments.map(t => {
-              const isOverridden = treatmentOverrides[t.arm.wayId] !== undefined
               const armLabel = t.arm.name ?? `Unnamed (${t.arm.classification})`
               return (
                 <div key={t.arm.wayId} className="rounded bg-gray-800 px-3 py-2 text-xs">
@@ -175,30 +171,15 @@ function TGSResultPanel({
                     <span className="text-white font-semibold truncate mr-2">{armLabel}</span>
                     <span className="text-gray-500 shrink-0">{t.arm.distanceAlongWzM}m along WZ</span>
                   </div>
-                  <div className="flex gap-1.5 flex-wrap">
-                    {(['ROAD_CLOSURE', 'CONTROLLER', 'GIVE_WAY'] as const).map(opt => {
-                      const isActive = t.treatment === opt
-                      const isAuto = t.autoTreatment === opt && !isOverridden
-                      return (
-                        <button
-                          key={opt}
-                          onClick={() => onTreatmentOverride(t.arm.wayId, opt)}
-                          className={`px-2 py-1 rounded text-xs font-medium transition-colors ${
-                            isActive
-                              ? opt === 'ROAD_CLOSURE'
-                                ? 'bg-red-700 text-white'
-                                : opt === 'CONTROLLER'
-                                  ? 'bg-yellow-600 text-white'
-                                  : 'bg-gray-600 text-white'
-                              : 'bg-gray-700 text-gray-400 hover:text-white'
-                          }`}
-                        >
-                          {TREATMENT_LABEL[opt]}
-                          {isAuto && <span className="ml-1 text-gray-300 font-normal">(auto)</span>}
-                        </button>
-                      )
-                    })}
-                  </div>
+                  <span className={`inline-block px-2 py-1 rounded text-xs font-medium ${
+                    t.treatment === 'ROAD_CLOSURE'
+                      ? 'bg-red-700 text-white'
+                      : t.treatment === 'CONTROLLER'
+                        ? 'bg-yellow-600 text-white'
+                        : 'bg-gray-600 text-white'
+                  }`}>
+                    {TREATMENT_LABEL[t.treatment]}
+                  </span>
                   {t.notes.map((n, i) => (
                     <p key={i} className="text-gray-500 leading-snug mt-1">{n}</p>
                   ))}
@@ -206,6 +187,14 @@ function TGSResultPanel({
               )
             })}
           </div>
+        </div>
+      )}
+
+      {/* AI justification */}
+      {result.justification && (
+        <div>
+          <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-1">Design Justification</p>
+          <p className="text-xs text-gray-400 leading-snug bg-gray-800 rounded px-3 py-2">{result.justification}</p>
         </div>
       )}
 
@@ -430,12 +419,11 @@ type Props = {
   roundaboutData: RoundaboutData | null
   workParams: WorkParams
   tgsResult: TGSResult | null
-  treatmentOverrides: Record<string, IntersectionTreatment['treatment']>
+  generation: GenerationState
   onSetPlacingPoint: (p: WorkZonePoint) => void
   onClear: () => void
   onPlaceSelect: (place: google.maps.places.PlaceResult) => void
   onWorkParamsChange: (p: WorkParams) => void
-  onTreatmentOverride: (wayId: string, treatment: IntersectionTreatment['treatment']) => void
   onGenerate: () => void
 }
 
@@ -476,7 +464,7 @@ function RoadDataPanel({ data }: { data: RoadData }) {
   )
 }
 
-export function Sidebar({ workZone, placingPoint, roadData, fetchStatus, roundaboutData, workParams, tgsResult, treatmentOverrides, onSetPlacingPoint, onClear, onPlaceSelect, onWorkParamsChange, onTreatmentOverride, onGenerate }: Props) {
+export function Sidebar({ workZone, placingPoint, roadData, fetchStatus, roundaboutData, workParams, tgsResult, generation, onSetPlacingPoint, onClear, onPlaceSelect, onWorkParamsChange, onGenerate }: Props) {
   const bothPinsSet = workZone.start !== null && workZone.end !== null
   const workZoneDefined = bothPinsSet && workZone.closedSide !== null
 
@@ -633,15 +621,30 @@ export function Sidebar({ workZone, placingPoint, roadData, fetchStatus, roundab
             )}
             <button
               onClick={onGenerate}
-              disabled={fetchStatus !== 'loaded' || !roadData}
+              disabled={fetchStatus !== 'loaded' || !roadData || generation.status === 'running'}
               className={`w-full px-3 py-2 rounded text-sm font-bold transition-colors ${
-                fetchStatus === 'loaded' && roadData
+                fetchStatus === 'loaded' && roadData && generation.status !== 'running'
                   ? 'bg-yellow-600 hover:bg-yellow-500 text-white cursor-pointer'
                   : 'bg-gray-700 text-gray-500 cursor-not-allowed'
               }`}
             >
-              Generate TGS
+              {generation.status === 'running' ? (
+                <span className="flex items-center justify-center gap-2">
+                  <span className="w-3.5 h-3.5 rounded-full border-2 border-gray-500 border-t-white animate-spin shrink-0" />
+                  Designing TGS…
+                </span>
+              ) : (
+                'Generate TGS'
+              )}
             </button>
+            {generation.status === 'running' && (
+              <p className="mt-2 text-xs text-gray-500">
+                The AI is designing the scheme against the TCAWS rules — this can take a minute or two.
+              </p>
+            )}
+            {generation.status === 'error' && (
+              <p className="mt-2 text-xs text-red-400">{generation.message}</p>
+            )}
           </section>
         )}
 
@@ -651,7 +654,7 @@ export function Sidebar({ workZone, placingPoint, roadData, fetchStatus, roundab
             <h2 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">
               TGS Output
             </h2>
-            <TGSResultPanel result={tgsResult} worksDescription={workParams.worksDescription} treatmentOverrides={treatmentOverrides} onTreatmentOverride={onTreatmentOverride} />
+            <TGSResultPanel result={tgsResult} worksDescription={workParams.worksDescription} />
           </section>
         )}
 

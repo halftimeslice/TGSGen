@@ -3,9 +3,14 @@ import { APIProvider } from '@vis.gl/react-google-maps'
 import { WorkZoneMap } from './components/WorkZoneMap'
 import { Sidebar } from './components/Sidebar'
 import { TGSDiagram } from './components/TGSDiagram'
-import type { WorkZone, WorkZonePoint, RoadData, FetchStatus, RoundaboutData, WorkParams, TGSResult, IntersectionArm, IntersectionTreatment } from './types'
+import type { WorkZone, WorkZonePoint, RoadData, FetchStatus, RoundaboutData, WorkParams, TGSResult, IntersectionArm } from './types'
 import { fetchRoadData, fetchRoundaboutArms, fetchIntersectingRoads } from './lib/osmFetch'
-import { runTGSEngine } from './lib/tgsEngine'
+import { generateTGS } from './lib/aiGenerate'
+
+export type GenerationState =
+  | { status: 'idle' }
+  | { status: 'running' }
+  | { status: 'error'; message: string }
 
 const API_KEY = import.meta.env.VITE_GOOGLE_MAPS_API_KEY as string
 
@@ -41,8 +46,8 @@ export default function App() {
   const [roundaboutData, setRoundaboutData] = useState<RoundaboutData | null>(null)
   const [workParams, setWorkParams] = useState<WorkParams>(defaultWorkParams)
   const [tgsResult, setTgsResult] = useState<TGSResult | null>(null)
+  const [generation, setGeneration] = useState<GenerationState>({ status: 'idle' })
   const [intersections, setIntersections] = useState<IntersectionArm[]>([])
-  const [treatmentOverrides, setTreatmentOverrides] = useState<Record<string, IntersectionTreatment['treatment']>>({})
   const [mainView, setMainView] = useState<'map' | 'diagram'>('map')
   const [extendedPolyline, setExtendedPolyline] = useState<import('./types').LatLng[] | null>(null)
   const [wzStartOffsetM, setWzStartOffsetM] = useState<number>(0)
@@ -78,11 +83,6 @@ export default function App() {
     return () => controller.abort()
   }, [workZone.start?.lat, workZone.start?.lng, workZone.end?.lat, workZone.end?.lng])
 
-  // Clear treatment overrides whenever the work zone or closed side changes
-  useEffect(() => {
-    setTreatmentOverrides({})
-  }, [workZone.start?.lat, workZone.start?.lng, workZone.end?.lat, workZone.end?.lng, workZone.closedSide])
-
   // Auto-detect intersecting roads within the work zone corridor
   useEffect(() => {
     if (mainWayIds.length === 0 || !workZone.polyline) {
@@ -115,17 +115,23 @@ export default function App() {
     return () => controller.abort()
   }, [roundaboutWayIds])
 
-  function handleGenerate() {
-    if (!roadData || !workZone.polyline) return
-    setTgsResult(runTGSEngine(roadData, workParams, workZone, intersections, treatmentOverrides))
-    setMainView('map')
-  }
-
-  function handleTreatmentOverride(wayId: string, treatment: IntersectionTreatment['treatment']) {
-    if (!roadData || !workZone.polyline) return
-    const newOverrides = { ...treatmentOverrides, [wayId]: treatment }
-    setTreatmentOverrides(newOverrides)
-    setTgsResult(runTGSEngine(roadData, workParams, workZone, intersections, newOverrides))
+  async function handleGenerate() {
+    if (!roadData || !workZone.polyline || generation.status === 'running') return
+    setGeneration({ status: 'running' })
+    try {
+      const { result } = await generateTGS({
+        workParams,
+        roadData,
+        workZone,
+        intersections,
+        roundabout: roundaboutData,
+      })
+      setTgsResult(result)
+      setGeneration({ status: 'idle' })
+      setMainView('map')
+    } catch (err) {
+      setGeneration({ status: 'error', message: err instanceof Error ? err.message : 'Generation failed' })
+    }
   }
 
   function handleWorkZoneChange(wz: WorkZone) {
@@ -173,8 +179,7 @@ export default function App() {
           workParams={workParams}
           onWorkParamsChange={setWorkParams}
           tgsResult={tgsResult}
-          treatmentOverrides={treatmentOverrides}
-          onTreatmentOverride={handleTreatmentOverride}
+          generation={generation}
           onGenerate={handleGenerate}
         />
         <main className="flex-1 relative flex flex-col overflow-hidden">

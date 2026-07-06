@@ -4,7 +4,6 @@
 import { createServer } from 'node:http'
 import { fileURLToPath } from 'node:url'
 import { buildGenerationRequest } from './pipeline.mjs'
-import * as provider from './providers/claude.mjs'
 
 // API keys live in the project .env (gitignored)
 try {
@@ -12,6 +11,11 @@ try {
 } catch {
   // no .env — rely on the environment
 }
+
+// Provider swap point: Claude by default; TGS_PROVIDER=mock for key-less testing
+const provider = process.env.TGS_PROVIDER === 'mock'
+  ? await import('./providers/mock.mjs')
+  : await import('./providers/claude.mjs')
 
 const PORT = Number(process.env.TGS_SERVER_PORT ?? 8787)
 const MAX_BODY_BYTES = 25 * 1024 * 1024 // room for an aerial snapshot

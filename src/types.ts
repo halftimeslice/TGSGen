@@ -158,4 +158,5 @@ export type TGSResult = {
   complianceNotes: string[]
   warnings: string[]
   intersectionTreatments: IntersectionTreatment[]
+  justification?: string   // AI's plain-language explanation of the design
 }
