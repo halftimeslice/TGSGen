@@ -108,20 +108,26 @@ export function TGSMapOverlay({ tgsResult, extendedPolyline, wzStartOffsetM }: P
     for (const t of tgsResult.intersectionTreatments) {
       const arm = t.arm
       if (!arm.geometry || arm.geometry.length < 2) continue
-      const armD = Math.round(arm.speedLimit / 3.6)
+      const armAdvanceDist = arm.speedLimit <= 40 ? 40
+        : arm.speedLimit <= 50 ? 60
+        : arm.speedLimit <= 60 ? 80
+        : arm.speedLimit <= 70 ? 100
+        : arm.speedLimit <= 80 ? 150
+        : arm.speedLimit <= 100 ? 200
+        : 250
 
-      // Draw a band along the side road geometry from the junction back armD metres
-      const step = Math.max(2, armD / 20)
+      // Draw a band along the side road geometry from the junction back armAdvanceDist metres
+      const step = Math.max(2, armAdvanceDist / 40)
       // Arm geometry starts at its far end — find which end is the junction
       const armGeom = arm.geometry
       const connNode = arm.connectionNode
       const firstDist = Math.hypot(armGeom[0].lat - connNode.lat, armGeom[0].lng - connNode.lng)
       const lastDist  = Math.hypot(armGeom[armGeom.length - 1].lat - connNode.lat, armGeom[armGeom.length - 1].lng - connNode.lng)
       // Orient so it runs FROM the junction outward
-      const oriented = firstDist < lastDist ? [...armGeom].reverse() : armGeom
+      const oriented = firstDist > lastDist ? [...armGeom].reverse() : armGeom
 
-      // Sample from junction (0) to armD metres out
-      const pts = samplePolylineRange(oriented, 0, Math.min(armD, 200), step)
+      // Sample from junction (0) to armAdvanceDist metres out
+      const pts = samplePolylineRange(oriented, 0, armAdvanceDist, step)
       if (pts.length >= 2) {
         const sideColor = t.treatment === 'ROAD_CLOSURE' ? '#ef4444'
           : t.treatment === 'CONTROLLER' ? '#f97316'
@@ -177,7 +183,7 @@ export function TGSMapOverlay({ tgsResult, extendedPolyline, wzStartOffsetM }: P
       const armGeom = arm.geometry
       const connNode = arm.connectionNode
       const firstDist = Math.hypot(armGeom[0].lat - connNode.lat, armGeom[0].lng - connNode.lng)
-      const oriented = firstDist < Math.hypot(armGeom[armGeom.length - 1].lat - connNode.lat, armGeom[armGeom.length - 1].lng - connNode.lng)
+      const oriented = firstDist > Math.hypot(armGeom[armGeom.length - 1].lat - connNode.lat, armGeom[armGeom.length - 1].lng - connNode.lng)
         ? [...armGeom].reverse() : armGeom
 
       const seenSide = new Set<string>()

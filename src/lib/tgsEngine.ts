@@ -205,6 +205,7 @@ function buildIntersectionTreatments(
 ): IntersectionTreatment[] {
   return intersections.map(arm => {
     const armD = Math.round(arm.speedLimit / 3.6)
+    const armAdvanceDist = minAdvanceWarningDistM(arm.speedLimit)
     const armVpd = TCAW_VPD_MAP[arm.classification] ?? 500
     const armLabel = arm.name ?? `Unnamed road (${arm.classification})`
 
@@ -221,7 +222,7 @@ function buildIntersectionTreatments(
     const signsOnSideRoad: PlacedSign[] = [
       {
         code: 'T1-1',
-        distanceM: -armD,
+        distanceM: -armAdvanceDist,
         approach: 'A',
         description: 'Roadwork Ahead (side road approach)',
         sizeClass: sz,
