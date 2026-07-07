@@ -281,11 +281,10 @@ export function TGSDiagram({ tgsResult, workParams, roadData }: Props) {
         <g key={`${sign.code}:${sign.approach}:${Math.round(sign.distanceM)}`}>
           <line x1={xPx} y1={lineY1} x2={xPx} y2={lineY2}
             stroke="#52525b" strokeWidth={1} strokeDasharray="3 2" />
-          <foreignObject x={xPx - SIGN_PX_HALF} y={signY} width={SIGN_PX} height={SIGN_PX}>
-            <div style={{ width: SIGN_PX, height: SIGN_PX, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-              <SignIcon code={sign.code} px={SIGN_PX} />
-            </div>
-          </foreignObject>
+          {/* Nested SVG (not foreignObject) so the diagram rasterizes for PDF export */}
+          <g transform={`translate(${xPx - SIGN_PX_HALF}, ${signY})`}>
+            <SignIcon code={sign.code} px={SIGN_PX} />
+          </g>
           <text x={xPx} y={side === 'above' ? signY - 2 : signY + SIGN_PX + 9}
             fill="#e4e4e7" fontSize={7} fontFamily="monospace" textAnchor="middle">
             {sign.code}
@@ -357,12 +356,10 @@ export function TGSDiagram({ tgsResult, workParams, roadData }: Props) {
       signs.forEach((sign, i) => {
         const signY = yStart + direction * (18 + i * (SIGN_PX + 4))
         elems.push(
-          <foreignObject key={`br-sign-${arm.wayId}-${i}`}
-            x={xPx - SIGN_PX_HALF} y={signY} width={SIGN_PX} height={SIGN_PX}>
-            <div style={{ width: SIGN_PX, height: SIGN_PX, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-              <SignIcon code={sign.code} px={SIGN_PX} />
-            </div>
-          </foreignObject>,
+          <g key={`br-sign-${arm.wayId}-${i}`}
+            transform={`translate(${xPx - SIGN_PX_HALF}, ${signY})`}>
+            <SignIcon code={sign.code} px={SIGN_PX} />
+          </g>,
           <text key={`br-sign-label-${arm.wayId}-${i}`}
             x={xPx + SIGN_PX_HALF + 2} y={signY + SIGN_PX / 2 + 3}
             fill="#e4e4e7" fontSize={7} fontFamily="monospace">
@@ -453,6 +450,7 @@ export function TGSDiagram({ tgsResult, workParams, roadData }: Props) {
       flexDirection: 'column',
     }}>
       <svg
+        id="tgs-diagram-svg"
         viewBox={`0 0 ${svgW} ${TOTAL_H}`}
         width={svgW}
         height={TOTAL_H}

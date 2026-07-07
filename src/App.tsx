@@ -6,6 +6,7 @@ import { TGSDiagram } from './components/TGSDiagram'
 import type { WorkZone, WorkZonePoint, RoadData, FetchStatus, RingInfo, RoundaboutData, WorkParams, TGSResult, IntersectionArm } from './types'
 import { fetchRoadData, fetchRoundaboutArms, fetchIntersectingRoads } from './lib/osmFetch'
 import { generateTGS } from './lib/aiGenerate'
+import { exportSvgToPdf, tgsPdfFilename } from './lib/pdfExport'
 
 export type GenerationState =
   | { status: 'idle' }
@@ -170,6 +171,27 @@ export default function App() {
     setTgsResult(aiTgsResult)
   }
 
+  const [exporting, setExporting] = useState(false)
+
+  async function handleExportPdf() {
+    if (!tgsResult || exporting) return
+    setExporting(true)
+    try {
+      // The diagram SVG only exists while the diagram view is mounted
+      if (mainView !== 'diagram') {
+        setMainView('diagram')
+        await new Promise(r => setTimeout(r, 150))
+      }
+      const svg = document.getElementById('tgs-diagram-svg') as SVGSVGElement | null
+      if (!svg) throw new Error('Diagram not ready — try again')
+      await exportSvgToPdf(svg, tgsPdfFilename(workParams.tgsNumber, roadData?.name ?? null))
+    } catch (err) {
+      alert(err instanceof Error ? err.message : 'PDF export failed')
+    } finally {
+      setExporting(false)
+    }
+  }
+
   function handleWorkZoneChange(wz: WorkZone) {
     setWorkZone(wz)
     if (placingPoint === 'start' && wz.end === null) {
@@ -245,6 +267,13 @@ export default function App() {
                 }`}
               >
                 TGS Diagram
+              </button>
+              <button
+                onClick={handleExportPdf}
+                disabled={exporting}
+                className="px-4 py-1.5 rounded text-xs font-semibold transition-colors bg-green-700 hover:bg-green-600 text-white disabled:bg-gray-700 disabled:text-gray-500"
+              >
+                {exporting ? 'Exporting…' : 'Export PDF'}
               </button>
             </div>
           )}
