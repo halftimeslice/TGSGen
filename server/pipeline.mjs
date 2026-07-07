@@ -17,6 +17,7 @@ Hard rules:
 - Use only sign codes that exist in the sign library.
 - Sign positions are metres along the road from the work zone start (distanceM). Negative values are on the approach before the work zone. Approach 'A' faces traffic arriving at the work zone start; approach 'B' faces traffic arriving from the other end.
 - Every intersecting road provided in the input must be given a treatment in sideRoads, keyed by its wayId.
+- Roundabout jobs: arms with routeRole 'entry'/'exit' carry the selected route. Arms with defaultClosed:true meet the ring inside the closed portion — treat them as closed at the roundabout (with signage in sideRoads if they also appear in intersections) unless that would be unsafe; explain any deviation in warnings.
 - If the job cannot be done safely as described, still produce the safest compliant design and explain the problem in warnings.
 - justification must be plain language a reviewing engineer can check against the TCAWS tables.`
 

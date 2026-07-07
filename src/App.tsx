@@ -3,7 +3,7 @@ import { APIProvider } from '@vis.gl/react-google-maps'
 import { WorkZoneMap } from './components/WorkZoneMap'
 import { Sidebar } from './components/Sidebar'
 import { TGSDiagram } from './components/TGSDiagram'
-import type { WorkZone, WorkZonePoint, RoadData, FetchStatus, RoundaboutData, WorkParams, TGSResult, IntersectionArm } from './types'
+import type { WorkZone, WorkZonePoint, RoadData, FetchStatus, RingInfo, RoundaboutData, WorkParams, TGSResult, IntersectionArm } from './types'
 import { fetchRoadData, fetchRoundaboutArms, fetchIntersectingRoads } from './lib/osmFetch'
 import { generateTGS } from './lib/aiGenerate'
 
@@ -51,6 +51,7 @@ export default function App() {
   const [mainView, setMainView] = useState<'map' | 'diagram'>('map')
   const [extendedPolyline, setExtendedPolyline] = useState<import('./types').LatLng[] | null>(null)
   const [wzStartOffsetM, setWzStartOffsetM] = useState<number>(0)
+  const [ring, setRing] = useState<RingInfo | null>(null)
 
   // Fetch road data whenever both pins are placed or moved
   useEffect(() => {
@@ -66,7 +67,7 @@ export default function App() {
     const controller = new AbortController()
 
     fetchRoadData(workZone.start, workZone.end, controller.signal)
-      .then(({ roadData: data, polyline, segments, wayIds, roundaboutWayIds: rabIds, extendedPolyline: ext, wzStartOffsetM: offset }) => {
+      .then(({ roadData: data, polyline, segments, wayIds, roundaboutWayIds: rabIds, extendedPolyline: ext, wzStartOffsetM: offset, ring: ringInfo }) => {
         setRoadData(data)
         setMainWayIds(wayIds)
         setWorkZone(wz => ({ ...wz, polyline, polylineSegments: segments }))
@@ -75,6 +76,7 @@ export default function App() {
         setRoundaboutData(null)
         setExtendedPolyline(ext)
         setWzStartOffsetM(offset)
+        setRing(ringInfo)
       })
       .catch(() => {
         if (!controller.signal.aborted) setFetchStatus('error')
@@ -125,6 +127,7 @@ export default function App() {
         workZone,
         intersections,
         roundabout: roundaboutData,
+        ring,
       })
       setTgsResult(result)
       setGeneration({ status: 'idle' })
@@ -158,6 +161,7 @@ export default function App() {
     setIntersections([])
     setExtendedPolyline(null)
     setWzStartOffsetM(0)
+    setRing(null)
   }
 
   const handlePlaceSelect = useCallback((place: google.maps.places.PlaceResult) => {
@@ -217,7 +221,7 @@ export default function App() {
               placingPoint={placingPoint}
               selectedPlace={selectedPlace}
               roadData={roadData}
-              roundaboutData={roundaboutData}
+              ring={ring}
               tgsResult={tgsResult}
               extendedPolyline={extendedPolyline}
               wzStartOffsetM={wzStartOffsetM}

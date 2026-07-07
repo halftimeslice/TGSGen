@@ -1,8 +1,9 @@
 import type {
-  WorkParams, RoadData, WorkZone, IntersectionArm, RoundaboutData,
+  WorkParams, RoadData, WorkZone, IntersectionArm, RingInfo, RoundaboutData,
   TGSResult, IntersectionTreatment, PlacedSign, SignSizeClass,
 } from '../types'
 import { haversineM } from './geometry'
+import { classifyArm, travelArcOnLeft } from './ringArcs'
 
 // ─── Shape returned by the helper server (mirrors server/tgsSchema.mjs) ──────
 
@@ -53,6 +54,7 @@ export type GenerateJobInput = {
   workZone: WorkZone
   intersections: IntersectionArm[]
   roundabout: RoundaboutData | null
+  ring: RingInfo | null
 }
 
 function polylineLengthM(pts: Array<{ lat: number; lng: number }>): number {
@@ -75,7 +77,22 @@ function toSign(s: AiPlacedSign): PlacedSign {
 // ─── Generation ───────────────────────────────────────────────────────────────
 
 export async function generateTGS(input: GenerateJobInput): Promise<{ result: TGSResult; usage: unknown }> {
-  const { workParams, roadData, workZone, intersections, roundabout } = input
+  const { workParams, roadData, workZone, intersections, roundabout, ring } = input
+
+  // Which ring arc the closed corridor covers: arms on that arc default to
+  // closed at the roundabout (engineer can overrule later). The corridor's
+  // left side hugs the travel arc when the ring curls left at the entry —
+  // same geometry test LaneSideOverlay uses to draw the corridors.
+  let closedArc: 'travel' | 'far' | null = null
+  const entrySeg = workZone.polylineSegments?.find(s => s.type === 'road')
+  if (ring && workZone.closedSide && entrySeg && entrySeg.nodes.length >= 2) {
+    const travelLeft = travelArcOnLeft(
+      ring,
+      entrySeg.nodes[entrySeg.nodes.length - 2],
+      entrySeg.nodes[entrySeg.nodes.length - 1],
+    )
+    closedArc = (workZone.closedSide === 'left') === travelLeft ? 'travel' : 'far'
+  }
 
   const payload = {
     closureDetails: workParams,
@@ -99,15 +116,22 @@ export async function generateTGS(input: GenerateJobInput): Promise<{ result: TG
       ? {
           type: roundabout.type,
           center: roundabout.center,
-          arms: roundabout.arms.map(a => ({
-            wayId: a.wayId,
-            name: a.name,
-            lanes: a.lanes,
-            speedLimit: a.speedLimit,
-            isOneWay: a.isOneWay,
-            oneWayDir: a.oneWayDir,
-            angleFromCenter: Math.round(a.angleFromCenter),
-          })),
+          arms: roundabout.arms.map(a => {
+            const role = ring ? classifyArm(ring, a) : null
+            return {
+              wayId: a.wayId,
+              name: a.name,
+              lanes: a.lanes,
+              speedLimit: a.speedLimit,
+              isOneWay: a.isOneWay,
+              oneWayDir: a.oneWayDir,
+              angleFromCenter: Math.round(a.angleFromCenter),
+              // 'entry'/'exit' = the arm carries the selected route
+              routeRole: role === 'entry' || role === 'exit' ? role : null,
+              // Arm meets the ring on the closed side's arc — closed by default
+              defaultClosed: closedArc !== null && role === closedArc,
+            }
+          }),
         }
       : null,
   }

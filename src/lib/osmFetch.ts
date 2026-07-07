@@ -9,6 +9,7 @@ export type OsmFetchResult = {
   roundaboutWayIds: string[]   // ring way(s) the route passes through (a ring may be split into several OSM ways)
   extendedPolyline: LatLng[]   // full road geometry beyond pins — follows actual curvature
   wzStartOffsetM: number        // metres from extendedPolyline[0] to work zone start
+  ring: RingInfo | null         // full ring the route passes through, for corridor drawing
 }
 
 // NSW defaults by OSM highway classification (TCAW / AS 1742.3)
@@ -388,7 +389,10 @@ async function stitchViaRoundabout(
       extendedPolyline,
       wzStartOffsetM: polylineLenM(approach),
       ringWayIds: ring.map(w => String(w.id)),
-      ring: { nodes: ringNodes, center, entryIdx, exitIdx },
+      ring: {
+        nodes: ringNodes, center, entryIdx, exitIdx,
+        entryWayId: String(startWay.id), exitWayId: String(endWay.id),
+      },
     }
   }
 
@@ -459,6 +463,7 @@ export async function fetchRoadData(
   let wzStartOffsetM: number
   let segments: PolylineSegment[] | null = null
   let ringWayIds: string[] = []
+  let ringInfo: RingInfo | null = null
   const wayIds: string[] = []
 
   if (startWay.id === endWay.id) {
@@ -497,6 +502,7 @@ export async function fetchRoadData(
         extendedPolyline = viaRing.extendedPolyline
         wzStartOffsetM = viaRing.wzStartOffsetM
         ringWayIds = viaRing.ringWayIds
+        ringInfo = viaRing.ring
       } else {
         // No connection found — fall back to start way
         const geom: LatLng[] = startWay.geometry.map((n: any) => ({ lat: n.lat, lng: n.lon }))
@@ -526,6 +532,7 @@ export async function fetchRoadData(
     roundaboutWayIds: ringWayIds,
     extendedPolyline,
     wzStartOffsetM,
+    ring: ringInfo,
   }
 }
 

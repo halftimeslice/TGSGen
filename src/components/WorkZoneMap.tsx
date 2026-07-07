@@ -7,9 +7,8 @@ import {
   useMap,
 } from '@vis.gl/react-google-maps'
 import { LaneSideOverlay } from './LaneSideOverlay'
-import { RoundaboutOverlay } from './RoundaboutOverlay'
 import { TGSMapOverlay } from './TGSMapOverlay'
-import type { WorkZone, WorkZonePoint, LatLng, RoundaboutData, RoadData, TGSResult } from '../types'
+import type { WorkZone, WorkZonePoint, LatLng, RingInfo, RoadData, TGSResult } from '../types'
 
 type Props = {
   workZone: WorkZone
@@ -17,7 +16,7 @@ type Props = {
   placingPoint: WorkZonePoint
   selectedPlace: google.maps.places.PlaceResult | null
   roadData: RoadData | null
-  roundaboutData: RoundaboutData | null
+  ring: RingInfo | null
   tgsResult: TGSResult | null
   extendedPolyline: LatLng[] | null
   wzStartOffsetM: number
@@ -42,7 +41,7 @@ const NSW_CENTER: LatLng = { lat: -33.8688, lng: 151.2093 }
 const YELLOW = { bg: '#eab308', border: '#a16207', glyph: '#fff' }
 
 
-export function WorkZoneMap({ workZone, onWorkZoneChange, placingPoint, selectedPlace, roadData, roundaboutData, tgsResult, extendedPolyline, wzStartOffsetM }: Props) {
+export function WorkZoneMap({ workZone, onWorkZoneChange, placingPoint, selectedPlace, roadData, ring, tgsResult, extendedPolyline, wzStartOffsetM }: Props) {
   const [hoverPos, setHoverPos] = useState<LatLng | null>(null)
 
   const handleClick = useCallback(
@@ -95,14 +94,13 @@ export function WorkZoneMap({ workZone, onWorkZoneChange, placingPoint, selected
           start={workZone.polyline![0]}
           end={workZone.polyline![workZone.polyline!.length - 1]}
           segments={workZone.polylineSegments}
+          ring={ring}
           closedSide={workZone.closedSide}
           disabled={placingPoint !== null}
           roadWidth={roadData?.width ?? 7}
           onSelectSide={handleSelectSide}
         />
       )}
-
-      {roundaboutData && <RoundaboutOverlay roundaboutData={roundaboutData} />}
 
       {tgsResult && workZone.polyline && workZone.polyline.length >= 2 && (
         <TGSMapOverlay

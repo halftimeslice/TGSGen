@@ -1,11 +1,13 @@
 import { useEffect, useRef } from 'react'
 import { useMap } from '@vis.gl/react-google-maps'
-import type { LatLng, PolylineSegment } from '../types'
+import type { LatLng, PolylineSegment, RingInfo } from '../types'
+import { ringArc, travelArcOnLeft, offsetFromCenter } from '../lib/ringArcs'
 
 type Props = {
   start: LatLng
   end: LatLng
   segments: PolylineSegment[] | null
+  ring: RingInfo | null
   closedSide: 'left' | 'right' | null
   disabled: boolean
   roadWidth: number
@@ -112,7 +114,8 @@ function resamplePolyline(nodes: LatLng[], stepM: number): LatLng[] {
   return result
 }
 
-function buildSidePolygon(nodes: LatLng[], side: 'left' | 'right', offsetM: number): LatLng[] {
+// Offset every node of a polyline perpendicular to its local direction
+function sideOffsets(nodes: LatLng[], side: 'left' | 'right', offsetM: number): LatLng[] {
   const sign = side === 'left' ? -90 : 90
   const offsets: LatLng[] = []
 
@@ -131,10 +134,52 @@ function buildSidePolygon(nodes: LatLng[], side: 'left' | 'right', offsetM: numb
     }
   }
 
-  return [...offsets, ...[...nodes].reverse()]
+  return offsets
 }
 
-export function LaneSideOverlay({ start, end, segments, closedSide, disabled, roadWidth, onSelectSide }: Props) {
+function buildSidePolygon(nodes: LatLng[], side: 'left' | 'right', offsetM: number): LatLng[] {
+  return [...sideOffsets(nodes, side, offsetM), ...[...nodes].reverse()]
+}
+
+// ─── Flowing-corridor chain helpers ──────────────────────────────────────────
+// The corridor boundary through a roundabout is stitched from arm edges and
+// ring-arc offsets. Chains are joined nearest-endpoint, thinned, then run
+// through the Catmull-Rom spline so the joins render as one smooth curve.
+
+function assembleChain(parts: LatLng[][]): LatLng[] {
+  const chain: LatLng[] = []
+  for (const part of parts) {
+    if (part.length === 0) continue
+    if (chain.length === 0) { chain.push(...part); continue }
+    const tail = chain[chain.length - 1]
+    const dStart = distanceM(part[0], tail)
+    const dEnd = distanceM(part[part.length - 1], tail)
+    const oriented = dStart <= dEnd ? part : [...part].reverse()
+    for (const p of oriented) {
+      if (distanceM(p, chain[chain.length - 1]) > 0.5) chain.push(p)
+    }
+  }
+  return chain
+}
+
+// Thin a dense chain to ~stepM spacing so the spline can round off seam kinks
+function decimate(nodes: LatLng[], stepM: number): LatLng[] {
+  if (nodes.length <= 2) return nodes
+  const out: LatLng[] = [nodes[0]]
+  let acc = 0
+  for (let i = 1; i < nodes.length - 1; i++) {
+    acc += distanceM(nodes[i - 1], nodes[i])
+    if (acc >= stepM) { out.push(nodes[i]); acc = 0 }
+  }
+  out.push(nodes[nodes.length - 1])
+  return out
+}
+
+function smoothChain(parts: LatLng[][]): LatLng[] {
+  return splineSegment(decimate(assembleChain(parts), 6), 2)
+}
+
+export function LaneSideOverlay({ start, end, segments, ring, closedSide, disabled, roadWidth, onSelectSide }: Props) {
   const map = useMap()
   const cbRef = useRef(onSelectSide)
   cbRef.current = onSelectSide
@@ -156,50 +201,81 @@ export function LaneSideOverlay({ start, end, segments, closedSide, disabled, ro
         : { fill: '#22c55e', stroke: '#16a34a', opacity: 0.45 }
     }
 
-    for (const seg of activeSegments) {
-      if (seg.type === 'roundabout') continue
-
-      // Road segment: normal left/right corridor
-      const nodes = resamplePolyline(seg.nodes, 2)
-      const lc = sideStyle('left')
-      const rc = sideStyle('right')
-
-      const leftPoly = new google.maps.Polygon({
-        paths: buildSidePolygon(nodes, 'left', OFFSET),
-        strokeColor: lc.stroke, strokeOpacity: 0.9, strokeWeight: 2,
-        fillColor: lc.fill, fillOpacity: lc.opacity,
+    function addSidePolygon(paths: LatLng[], side: 'left' | 'right') {
+      const style = sideStyle(side)
+      const poly = new google.maps.Polygon({
+        paths,
+        strokeColor: style.stroke, strokeOpacity: 0.9, strokeWeight: 2,
+        fillColor: style.fill, fillOpacity: style.opacity,
         map, clickable: selectable,
       })
-
-      const rightPoly = new google.maps.Polygon({
-        paths: buildSidePolygon(nodes, 'right', OFFSET),
-        strokeColor: rc.stroke, strokeOpacity: 0.9, strokeWeight: 2,
-        fillColor: rc.fill, fillOpacity: rc.opacity,
-        map, clickable: selectable,
-      })
-
-      const centreline = new google.maps.Polyline({
-        path: nodes, strokeColor: '#ffffff', strokeOpacity: 0.5, strokeWeight: 1, map,
-      })
-
       if (selectable) {
-        leftPoly.addListener('click', () => cbRef.current('left'))
-        rightPoly.addListener('click', () => cbRef.current('right'))
-        leftPoly.addListener('mouseover', () => leftPoly.setOptions({ fillOpacity: 0.65 }))
-        leftPoly.addListener('mouseout', () => leftPoly.setOptions({ fillOpacity: lc.opacity }))
-        rightPoly.addListener('mouseover', () => rightPoly.setOptions({ fillOpacity: 0.65 }))
-        rightPoly.addListener('mouseout', () => rightPoly.setOptions({ fillOpacity: rc.opacity }))
+        poly.addListener('click', () => cbRef.current(side))
+        poly.addListener('mouseover', () => poly.setOptions({ fillOpacity: 0.65 }))
+        poly.addListener('mouseout', () => poly.setOptions({ fillOpacity: style.opacity }))
+      }
+      cleanups.push(() => poly.setMap(null))
+    }
+
+    function addCentreline(path: LatLng[]) {
+      const centreline = new google.maps.Polyline({
+        path, strokeColor: '#ffffff', strokeOpacity: 0.5, strokeWeight: 1, map,
+      })
+      cleanups.push(() => centreline.setMap(null))
+    }
+
+    const rabIdx = activeSegments.findIndex(s => s.type === 'roundabout')
+    const flowing =
+      ring !== null &&
+      rabIdx === 1 &&
+      activeSegments.length === 3 &&
+      activeSegments[0].nodes.length >= 2 &&
+      activeSegments[2].nodes.length >= 2
+
+    if (flowing && ring) {
+      // One continuous corridor per side, pin to pin, splitting around the
+      // central island and rejoining on the exit arm. Each side's band hugs
+      // one ring arc: the travel arc sits on the side the ring curls toward
+      // at the entry (left for a normal clockwise Australian roundabout),
+      // the far arc carries the other colour the long way around.
+      const entryArm = resamplePolyline(activeSegments[0].nodes, 2)
+      const exitArm = resamplePolyline(activeSegments[2].nodes, 2)
+      const travelLeft = travelArcOnLeft(
+        ring,
+        entryArm[entryArm.length - 2],
+        entryArm[entryArm.length - 1],
+      )
+
+      for (const side of ['left', 'right'] as const) {
+        const arc = ringArc(ring, (side === 'left') === travelLeft ? 'travel' : 'far')
+        const outer = smoothChain([
+          sideOffsets(entryArm, side, OFFSET),
+          arc.map(p => offsetFromCenter(p, ring.center, OFFSET)),
+          sideOffsets(exitArm, side, OFFSET),
+        ])
+        const inner = smoothChain([
+          entryArm,
+          arc.map(p => offsetFromCenter(p, ring.center, -OFFSET)),
+          exitArm,
+        ])
+        addSidePolygon([...outer, ...[...inner].reverse()], side)
       }
 
-      cleanups.push(
-        () => leftPoly.setMap(null),
-        () => rightPoly.setMap(null),
-        () => centreline.setMap(null),
-      )
+      addCentreline(smoothChain([entryArm, ringArc(ring, 'travel'), exitArm]))
+    } else {
+      for (const seg of activeSegments) {
+        if (seg.type === 'roundabout') continue
+
+        // Road segment: normal left/right corridor
+        const nodes = resamplePolyline(seg.nodes, 2)
+        addSidePolygon(buildSidePolygon(nodes, 'left', OFFSET), 'left')
+        addSidePolygon(buildSidePolygon(nodes, 'right', OFFSET), 'right')
+        addCentreline(nodes)
+      }
     }
 
     return () => cleanups.forEach(fn => fn())
-  }, [map, start, end, segments, closedSide, disabled, roadWidth])
+  }, [map, start, end, segments, ring, closedSide, disabled, roadWidth])
 
   return null
 }

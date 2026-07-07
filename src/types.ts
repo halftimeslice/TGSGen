@@ -17,6 +17,8 @@ export type RingInfo = {
   center: LatLng
   entryIdx: number     // ring node where the route enters
   exitIdx: number      // ring node where the route exits
+  entryWayId: string   // OSM way the route arrives on
+  exitWayId: string    // OSM way the route leaves on
 }
 
 export type WorkZone = {
