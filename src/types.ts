@@ -10,6 +10,15 @@ export type PolylineSegment = {
   nodes: LatLng[]
 }
 
+// Full roundabout ring the route passes through, for drawing the selection
+// corridors around the central island
+export type RingInfo = {
+  nodes: LatLng[]      // ordered loop in travel (clockwise) direction, no duplicate closing node
+  center: LatLng
+  entryIdx: number     // ring node where the route enters
+  exitIdx: number      // ring node where the route exits
+}
+
 export type WorkZone = {
   start: LatLng | null
   end: LatLng | null

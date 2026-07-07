@@ -1,4 +1,4 @@
-import type { LatLng, RoadData, PolylineSegment, RoundaboutData, RoundaboutArm, IntersectionArm } from '../types'
+import type { LatLng, RoadData, PolylineSegment, RingInfo, RoundaboutData, RoundaboutArm, IntersectionArm } from '../types'
 import { distanceAlongPolylineM, findPolylineIntersection, sideOfPolyline, haversineM } from './geometry'
 
 export type OsmFetchResult = {
@@ -290,6 +290,7 @@ type RingStitchResult = {
   extendedPolyline: LatLng[]
   wzStartOffsetM: number
   ringWayIds: string[]
+  ring: RingInfo
 }
 
 async function stitchViaRoundabout(
@@ -376,12 +377,18 @@ async function stitchViaRoundabout(
     const extension = nodesFrom(endOriented, end)
     const extendedPolyline = [...approach, ...polyline.slice(1), ...extension.slice(1)]
 
+    const center: LatLng = {
+      lat: ringNodes.reduce((s, n) => s + n.lat, 0) / ringNodes.length,
+      lng: ringNodes.reduce((s, n) => s + n.lng, 0) / ringNodes.length,
+    }
+
     return {
       polyline,
       segments,
       extendedPolyline,
       wzStartOffsetM: polylineLenM(approach),
       ringWayIds: ring.map(w => String(w.id)),
+      ring: { nodes: ringNodes, center, entryIdx, exitIdx },
     }
   }
 
