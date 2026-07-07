@@ -16,38 +16,52 @@ export async function generate({ user }) {
 
   const speed = job.roadData?.speedLimit ?? 50
   const wzLen = job.workZone?.lengthM ?? 60
-  const taper = speed <= 60 ? 15 : speed <= 80 ? 30 : 60
-  const advance = speed <= 50 ? 60 : speed <= 60 ? 80 : speed <= 80 ? 150 : 250
+  // Values follow the TCAWS tables so mock output passes the automatic checker
+  const taper = speed <= 45 ? 15 : speed <= 65 ? 30 : speed <= 85 ? 60 : 130
+  const coneSpacing = speed <= 45 ? 4 : speed <= 65 ? 8 : speed <= 85 ? 15 : 30
   const D = Math.round(speed / 3.6)
+  const advLevels = speed > 85 ? 3 : speed > 65 ? 2 : 1
+  const advance = Math.round((speed > 85 ? 2.5 : speed > 65 ? 2 : 1.5) * D) + 20
+  const manualAllowed = speed <= 65
+  const ttlEligible = !manualAllowed && speed <= 75
+  const speedZone = taper > 60 ? { speedKmh: Math.max(40, speed - 40), startDistanceM: -(advance + taper), endDistanceM: wzLen + D } : null
 
   const mkSign = (code, distanceM, approach, description) => ({
     code, distanceM, approach, roadName: null, description, sizeClass: 'B',
   })
 
   const output = {
-    tgsType: 'STOP_SLOW_BAT',
-    controlMethod: 'MANUAL',
+    tgsType: manualAllowed ? 'STOP_SLOW_BAT' : ttlEligible ? 'TTL_PORTABLE' : 'BASIC_DEVICES',
+    controlMethod: manualAllowed ? 'MANUAL' : 'PTCD',
     D,
     workZoneLength: wzLen,
     taperLength: taper,
-    coneSpacingM: Math.max(2, Math.round(speed / 10)),
-    speedZone: speed > 60 ? { speedKmh: 40, startDistanceM: -advance, endDistanceM: wzLen + advance } : null,
-    advanceWarning: { distanceM: advance, levels: 1, spacingM: advance },
+    coneSpacingM: coneSpacing,
+    speedZone,
+    advanceWarning: { distanceM: advance, levels: advLevels, spacingM: Math.max(D, Math.round(advance / advLevels)) },
     phases: [
-      { phase: 'DAY', tgsType: 'STOP_SLOW_BAT', controlMethod: 'MANUAL', notes: ['MOCK phase — placeholder only'] },
+      {
+        phase: 'DAY',
+        tgsType: manualAllowed ? 'STOP_SLOW_BAT' : ttlEligible ? 'TTL_PORTABLE' : 'BASIC_DEVICES',
+        controlMethod: manualAllowed ? 'MANUAL' : 'PTCD',
+        notes: ['MOCK phase — placeholder only'],
+      },
     ],
     signs: [
       mkSign('T1-1', -advance, 'A', 'Roadwork Ahead'),
-      mkSign('T1-18B', -Math.round(advance / 2), 'A', 'Prepare to Stop'),
+      mkSign('T5-16', -Math.round(advance / 2), 'A', 'Prepare to Stop'),
+      ...(manualAllowed ? [mkSign('T5-2-stop', -5, 'A', 'Stop/Slow bat — controller position')] : []),
+      ...(speedZone ? [mkSign('T1-3', -advance, 'A', `Speed Limit ${speedZone.speedKmh}`), mkSign('T1-3', wzLen + D, 'B', 'Speed derestriction')] : []),
       mkSign('T1-1', wzLen + advance, 'B', 'Roadwork Ahead'),
-      mkSign('T1-18B', wzLen + Math.round(advance / 2), 'B', 'Prepare to Stop'),
-      mkSign('T2-16', wzLen + taper, 'B', 'End Roadwork'),
+      mkSign('T5-16', wzLen + Math.round(advance / 2), 'B', 'Prepare to Stop'),
+      ...(manualAllowed ? [mkSign('T5-2-stop', wzLen + 5, 'B', 'Stop/Slow bat — controller position')] : []),
+      mkSign('T1-10', wzLen + taper, 'B', 'End Roadwork'),
     ],
-    ttlTiming: null,
+    ttlTiming: ttlEligible ? { greenWorkS: 35, greenThroughS: 45, allRedS: 5, cycleS: 90, mode: 'FIXED_TIME' } : null,
     personnelRequired: 2,
-    flashingArrowRequired: false,
+    flashingArrowRequired: speed > 85,
     bufferLength: D,
-    delineatorCount: Math.round((wzLen + 2 * taper) / Math.max(2, Math.round(speed / 10))),
+    delineatorCount: Math.round((wzLen + 2 * taper) / coneSpacing),
     sideRoads: (job.intersections ?? []).map(a => ({
       wayId: a.wayId,
       name: a.name,

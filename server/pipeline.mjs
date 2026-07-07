@@ -60,3 +60,25 @@ export function buildGenerationRequest(job) {
 
   return { system, user, schema: TGS_SCHEMA, maxTokens: 32000 }
 }
+
+// Retry round: same cached system blocks, original job + the rejected answer +
+// the checker's specific failures. Single-turn so any provider can run it.
+export function buildCorrectionRequest(job, previousOutput, failures) {
+  const base = buildGenerationRequest(job)
+  base.user = [
+    ...base.user,
+    {
+      type: 'text',
+      text: [
+        'Your previous TGS design for this job was:',
+        JSON.stringify(previousOutput, null, 2),
+        '',
+        'The automatic TCAWS compliance checker REJECTED it for these reasons:',
+        ...failures.map(f => `- ${f}`),
+        '',
+        'Produce the corrected COMPLETE TGS. Fix every listed failure exactly as stated; keep everything else unchanged unless a fix forces a change.',
+      ].join('\n'),
+    },
+  ]
+  return base
+}

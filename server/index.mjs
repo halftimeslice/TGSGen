@@ -3,7 +3,8 @@
 
 import { createServer } from 'node:http'
 import { fileURLToPath } from 'node:url'
-import { buildGenerationRequest } from './pipeline.mjs'
+import { buildGenerationRequest, buildCorrectionRequest } from './pipeline.mjs'
+import { checkTGS } from './checker.mjs'
 
 // API keys live in the project .env (gitignored)
 try {
@@ -62,9 +63,40 @@ const server = createServer(async (req, res) => {
         return
       }
       const job = await readJsonBody(req)
-      const request = buildGenerationRequest(job)
-      const { output, usage } = await provider.generate(request)
-      sendJson(res, 200, { tgs: output, usage })
+
+      // Generate → check against TCAWS tables → send failures back to the AI
+      // to fix → re-check. Correction rounds are capped; if the design still
+      // fails, it ships with loud warnings rather than silently.
+      const MAX_CORRECTION_ROUNDS = 2
+      let { output, usage } = await provider.generate(buildGenerationRequest(job))
+      let failures = checkTGS(output, job)
+      let rounds = 0
+      while (failures.length > 0 && rounds < MAX_CORRECTION_ROUNDS) {
+        rounds++
+        console.log(`[checker] round ${rounds}: ${failures.length} failure(s) — asking the AI to correct`)
+        ;({ output, usage } = await provider.generate(buildCorrectionRequest(job, output, failures)))
+        failures = checkTGS(output, job)
+      }
+
+      if (failures.length > 0) {
+        output.warnings = [
+          ...failures.map(f => `COMPLIANCE CHECK FAILED: ${f}`),
+          ...(output.warnings ?? []),
+        ]
+      } else {
+        output.complianceNotes = [
+          rounds === 0
+            ? 'Automatic TCAWS check: passed'
+            : `Automatic TCAWS check: passed after ${rounds} correction round${rounds > 1 ? 's' : ''}`,
+          ...(output.complianceNotes ?? []),
+        ]
+      }
+
+      sendJson(res, 200, {
+        tgs: output,
+        usage,
+        checker: { passed: failures.length === 0, correctionRounds: rounds, failures },
+      })
       return
     }
 
