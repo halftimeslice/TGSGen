@@ -99,6 +99,7 @@ export type ControlMethod = 'PASSIVE' | 'MANUAL' | 'PTCD'
 export type SignSizeClass = 'A' | 'B' | 'C' | 'D'
 
 export type PlacedSign = {
+  id?: string              // stable identity for editing (assigned when a TGS loads)
   code: string
   distanceM: number        // metres from WZ start; negative = before WZ
   approach: 'A' | 'B' | 'both' | 'side-road'

@@ -46,6 +46,8 @@ export default function App() {
   const [roundaboutData, setRoundaboutData] = useState<RoundaboutData | null>(null)
   const [workParams, setWorkParams] = useState<WorkParams>(defaultWorkParams)
   const [tgsResult, setTgsResult] = useState<TGSResult | null>(null)
+  // The untouched AI design — "Reset to AI version" restores this
+  const [aiTgsResult, setAiTgsResult] = useState<TGSResult | null>(null)
   const [generation, setGeneration] = useState<GenerationState>({ status: 'idle' })
   const [intersections, setIntersections] = useState<IntersectionArm[]>([])
   const [mainView, setMainView] = useState<'map' | 'diagram'>('map')
@@ -129,12 +131,43 @@ export default function App() {
         roundabout: roundaboutData,
         ring,
       })
-      setTgsResult(result)
+      // Stable ids so signs can be dragged/deleted individually
+      const withIds: TGSResult = {
+        ...result,
+        signs: result.signs.map((s, i) => ({ ...s, id: s.id ?? `ai-${i}` })),
+      }
+      setTgsResult(withIds)
+      setAiTgsResult(withIds)
       setGeneration({ status: 'idle' })
       setMainView('map')
     } catch (err) {
       setGeneration({ status: 'error', message: err instanceof Error ? err.message : 'Generation failed' })
     }
+  }
+
+  function handleUpdateSign(id: string, patch: Partial<import('./types').PlacedSign>) {
+    setTgsResult(r => r && ({
+      ...r,
+      signs: r.signs.map(s => (s.id === id ? { ...s, ...patch } : s)),
+    }))
+  }
+
+  function handleDeleteSign(id: string) {
+    setTgsResult(r => r && ({ ...r, signs: r.signs.filter(s => s.id !== id) }))
+  }
+
+  function handleAddSign(code: string, description: string) {
+    setTgsResult(r => r && ({
+      ...r,
+      signs: [
+        ...r.signs,
+        { id: `user-${Date.now()}`, code, distanceM: 0, approach: 'A' as const, description, sizeClass: 'B' as const },
+      ],
+    }))
+  }
+
+  function handleResetTgs() {
+    setTgsResult(aiTgsResult)
   }
 
   function handleWorkZoneChange(wz: WorkZone) {
@@ -185,6 +218,9 @@ export default function App() {
           tgsResult={tgsResult}
           generation={generation}
           onGenerate={handleGenerate}
+          hasEdits={tgsResult !== aiTgsResult}
+          onAddSign={handleAddSign}
+          onResetTgs={handleResetTgs}
         />
         <main className="flex-1 relative flex flex-col overflow-hidden">
           {/* View toggle — only visible after generate */}
@@ -225,6 +261,8 @@ export default function App() {
               tgsResult={tgsResult}
               extendedPolyline={extendedPolyline}
               wzStartOffsetM={wzStartOffsetM}
+              onUpdateSign={handleUpdateSign}
+              onDeleteSign={handleDeleteSign}
             />
           </div>
 

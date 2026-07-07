@@ -1,7 +1,9 @@
+import { useState } from 'react'
 import type { WorkZone, WorkZonePoint, RoadData, FetchStatus, RoundaboutData, WorkParams, WorkType, AffectedPart, TGSResult, IntersectionTreatment } from '../types'
 import type { GenerationState } from '../App'
 import { SearchBar } from './SearchBar'
 import { SignIcon } from './SignIcon'
+import { SIGN_PALETTE } from '../lib/signPalette'
 
 type TrafficBucket = 'passive' | 'standard' | 'busy' | 'major'
 
@@ -420,11 +422,66 @@ type Props = {
   workParams: WorkParams
   tgsResult: TGSResult | null
   generation: GenerationState
+  hasEdits: boolean
   onSetPlacingPoint: (p: WorkZonePoint) => void
   onClear: () => void
   onPlaceSelect: (place: google.maps.places.PlaceResult) => void
   onWorkParamsChange: (p: WorkParams) => void
   onGenerate: () => void
+  onAddSign: (code: string, description: string) => void
+  onResetTgs: () => void
+}
+
+function EditTGSPanel({ hasEdits, onAddSign, onResetTgs }: {
+  hasEdits: boolean
+  onAddSign: (code: string, description: string) => void
+  onResetTgs: () => void
+}) {
+  const [selectedCode, setSelectedCode] = useState(SIGN_PALETTE[0].code)
+  const selected = SIGN_PALETTE.find(s => s.code === selectedCode) ?? SIGN_PALETTE[0]
+
+  return (
+    <div className="flex flex-col gap-3">
+      <p className="text-xs text-gray-400">
+        Drag any sign along the road on the map — its distance updates as you move it.
+        Click a sign, then the red <span className="text-red-400 font-bold">×</span> to remove it.
+      </p>
+
+      <div>
+        <label className="text-xs text-gray-400 block mb-1">Add a sign</label>
+        <div className="flex items-center gap-2">
+          <div className="shrink-0"><SignIcon code={selected.code} px={34} /></div>
+          <select
+            value={selectedCode}
+            onChange={e => setSelectedCode(e.target.value)}
+            className="flex-1 min-w-0 bg-gray-800 text-white text-xs rounded px-2 py-1.5 border border-gray-700 focus:outline-none focus:ring-1 focus:ring-yellow-400"
+          >
+            {SIGN_PALETTE.map(s => (
+              <option key={s.code} value={s.code}>{s.code} — {s.description}</option>
+            ))}
+          </select>
+        </div>
+        <button
+          onClick={() => onAddSign(selected.code, selected.description)}
+          className="mt-2 w-full px-3 py-1.5 rounded text-xs font-semibold bg-gray-700 hover:bg-gray-600 text-gray-200 transition-colors"
+        >
+          Add to work zone start — then drag into place
+        </button>
+      </div>
+
+      <button
+        onClick={onResetTgs}
+        disabled={!hasEdits}
+        className={`w-full px-3 py-1.5 rounded text-xs font-semibold transition-colors ${
+          hasEdits
+            ? 'bg-gray-700 hover:bg-gray-600 text-amber-300'
+            : 'bg-gray-800 text-gray-600 cursor-not-allowed'
+        }`}
+      >
+        Reset to AI version
+      </button>
+    </div>
+  )
 }
 
 function DefaultBadge() {
@@ -464,7 +521,7 @@ function RoadDataPanel({ data }: { data: RoadData }) {
   )
 }
 
-export function Sidebar({ workZone, placingPoint, roadData, fetchStatus, roundaboutData, workParams, tgsResult, generation, onSetPlacingPoint, onClear, onPlaceSelect, onWorkParamsChange, onGenerate }: Props) {
+export function Sidebar({ workZone, placingPoint, roadData, fetchStatus, roundaboutData, workParams, tgsResult, generation, hasEdits, onSetPlacingPoint, onClear, onPlaceSelect, onWorkParamsChange, onGenerate, onAddSign, onResetTgs }: Props) {
   const bothPinsSet = workZone.start !== null && workZone.end !== null
   const workZoneDefined = bothPinsSet && workZone.closedSide !== null
 
@@ -645,6 +702,16 @@ export function Sidebar({ workZone, placingPoint, roadData, fetchStatus, roundab
             {generation.status === 'error' && (
               <p className="mt-2 text-xs text-red-400">{generation.message}</p>
             )}
+          </section>
+        )}
+
+        {/* Edit TGS */}
+        {tgsResult && (
+          <section className="border-t border-gray-700 pt-4">
+            <h2 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">
+              6. Edit TGS
+            </h2>
+            <EditTGSPanel hasEdits={hasEdits} onAddSign={onAddSign} onResetTgs={onResetTgs} />
           </section>
         )}
 

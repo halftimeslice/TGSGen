@@ -8,7 +8,7 @@ import {
 } from '@vis.gl/react-google-maps'
 import { LaneSideOverlay } from './LaneSideOverlay'
 import { TGSMapOverlay } from './TGSMapOverlay'
-import type { WorkZone, WorkZonePoint, LatLng, RingInfo, RoadData, TGSResult } from '../types'
+import type { WorkZone, WorkZonePoint, LatLng, PlacedSign, RingInfo, RoadData, TGSResult } from '../types'
 
 type Props = {
   workZone: WorkZone
@@ -20,6 +20,8 @@ type Props = {
   tgsResult: TGSResult | null
   extendedPolyline: LatLng[] | null
   wzStartOffsetM: number
+  onUpdateSign: (id: string, patch: Partial<PlacedSign>) => void
+  onDeleteSign: (id: string) => void
 }
 
 function MapController({ place }: { place: google.maps.places.PlaceResult | null }) {
@@ -41,7 +43,7 @@ const NSW_CENTER: LatLng = { lat: -33.8688, lng: 151.2093 }
 const YELLOW = { bg: '#eab308', border: '#a16207', glyph: '#fff' }
 
 
-export function WorkZoneMap({ workZone, onWorkZoneChange, placingPoint, selectedPlace, roadData, ring, tgsResult, extendedPolyline, wzStartOffsetM }: Props) {
+export function WorkZoneMap({ workZone, onWorkZoneChange, placingPoint, selectedPlace, roadData, ring, tgsResult, extendedPolyline, wzStartOffsetM, onUpdateSign, onDeleteSign }: Props) {
   const [hoverPos, setHoverPos] = useState<LatLng | null>(null)
 
   const handleClick = useCallback(
@@ -108,6 +110,8 @@ export function WorkZoneMap({ workZone, onWorkZoneChange, placingPoint, selected
           polyline={workZone.polyline}
           extendedPolyline={extendedPolyline ?? workZone.polyline}
           wzStartOffsetM={wzStartOffsetM}
+          onUpdateSign={onUpdateSign}
+          onDeleteSign={onDeleteSign}
         />
       )}
 

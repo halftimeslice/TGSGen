@@ -1,10 +1,11 @@
-import { useEffect, useMemo } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useMap, AdvancedMarker } from '@vis.gl/react-google-maps'
 import type { TGSResult, LatLng } from '../types'
 import {
   interpolatePolyline,
   samplePolylineRange,
   bearingAtDistance,
+  distanceAlongPolylineM,
   offsetPoint,
 } from '../lib/geometry'
 
@@ -13,15 +14,14 @@ type Props = {
   polyline: LatLng[]           // work zone polyline (between pins)
   extendedPolyline: LatLng[]   // full road geometry beyond pins — for curvature-correct rendering
   wzStartOffsetM: number        // distance along extendedPolyline to the work zone start
+  onUpdateSign: (id: string, patch: Partial<TGSResult['signs'][number]>) => void
+  onDeleteSign: (id: string) => void
 }
 
-// Sign codes worth showing as individual map markers (skip cones — too numerous)
-const MAP_SIGN_CODES = new Set([
-  'T1-1', 'T1-3', 'T1-4', 'T1-6',
-  'T5-2-stop', 'T5-2-slow', 'T5-2',
-  'T2-6', 'T1-9', 'T1-10',
-  'T5-15-left', 'T5-15-right', 'T1-34',
-])
+// Taper-line delineation markers are drawn en masse, not as individual markers
+function isBulkDelineation(code: string): boolean {
+  return code.startsWith('T5-4') || code.startsWith('T5-5')
+}
 
 const ZONE_COLOR = {
   advance: '#3b82f6',
@@ -60,8 +60,18 @@ function signPos(
   return offsetPoint(pos, (bearing + perpSide * 90 + 360) % 360, SIGN_OFFSET_M)
 }
 
-export function TGSMapOverlay({ tgsResult, extendedPolyline, wzStartOffsetM }: Props) {
+export function TGSMapOverlay({ tgsResult, extendedPolyline, wzStartOffsetM, onUpdateSign, onDeleteSign }: Props) {
   const map = useMap()
+  const [selectedId, setSelectedId] = useState<string | null>(null)
+  // Live distance readout for the sign currently being dragged
+  const [dragging, setDragging] = useState<{ id: string; distM: number } | null>(null)
+
+  // Snap a dragged position back onto the road: distance along the road
+  // relative to the work zone start
+  function snapDistM(latLng: google.maps.LatLng): number {
+    const p: LatLng = { lat: latLng.lat(), lng: latLng.lng() }
+    return distanceAlongPolylineM(extendedPolyline, p) - wzStartOffsetM
+  }
 
   // ── Zone band polylines — imperative Google Maps API ─────────────────────
   useEffect(() => {
@@ -151,31 +161,25 @@ export function TGSMapOverlay({ tgsResult, extendedPolyline, wzStartOffsetM }: P
   const markers = useMemo(() => {
     if (extendedPolyline.length < 2) return []
 
-    // Main road signs
-    const seen = new Set<string>()
+    // Main road signs — every sign is individually draggable/deletable
     const result: Array<{
-      key: string; pos: LatLng; code: string; approach: string; distLabel: string
+      key: string; id: string | null; pos: LatLng; code: string; approach: string; distanceM: number
     }> = []
 
     for (const sign of tgsResult.signs) {
-      if (!MAP_SIGN_CODES.has(sign.code)) continue
-      const dedupKey = `${sign.code}:${sign.approach}`
-      if (seen.has(dedupKey)) continue
-      seen.add(dedupKey)
+      if (isBulkDelineation(sign.code)) continue
 
       const perpSide = sign.approach === 'A' ? -1 : sign.approach === 'B' ? 1 : 0
       const pos = signPos(extendedPolyline, wzStartOffsetM, sign.distanceM, perpSide)
-      const distLabel = sign.distanceM < 0
-        ? `${Math.round(Math.abs(sign.distanceM))}m before`
-        : `${Math.round(sign.distanceM)}m`
 
       result.push({
-        key: `main:${sign.code}:${sign.approach}:${Math.round(sign.distanceM)}`,
-        pos, code: sign.code, approach: sign.approach, distLabel,
+        key: sign.id ?? `main:${sign.code}:${sign.approach}:${Math.round(sign.distanceM)}`,
+        id: sign.id ?? null,
+        pos, code: sign.code, approach: sign.approach, distanceM: sign.distanceM,
       })
     }
 
-    // Side road signs (Fix 2)
+    // Side road signs (Fix 2) — not editable yet
     for (const t of tgsResult.intersectionTreatments) {
       const arm = t.arm
       if (!arm.geometry || arm.geometry.length < 2) continue
@@ -188,7 +192,7 @@ export function TGSMapOverlay({ tgsResult, extendedPolyline, wzStartOffsetM }: P
 
       const seenSide = new Set<string>()
       for (const sign of t.signsOnSideRoad) {
-        if (!MAP_SIGN_CODES.has(sign.code)) continue
+        if (isBulkDelineation(sign.code)) continue
         if (seenSide.has(sign.code)) continue
         seenSide.add(sign.code)
 
@@ -196,8 +200,8 @@ export function TGSMapOverlay({ tgsResult, extendedPolyline, wzStartOffsetM }: P
         const pos = interpolatePolyline(oriented, absM)
         result.push({
           key: `side:${arm.wayId}:${sign.code}:${Math.round(sign.distanceM)}`,
-          pos, code: sign.code, approach: 'side-road',
-          distLabel: `${Math.round(absM)}m`,
+          id: null,
+          pos, code: sign.code, approach: 'side-road', distanceM: absM,
         })
       }
     }
@@ -207,27 +211,67 @@ export function TGSMapOverlay({ tgsResult, extendedPolyline, wzStartOffsetM }: P
 
   return (
     <>
-      {markers.map(({ key, pos, code, approach, distLabel }) => {
-        const bg     = APPROACH_BG[approach]    ?? '#fff'
-        const border = APPROACH_BORDER[approach] ?? '#666'
+      {markers.map(({ key, id, pos, code, approach, distanceM }) => {
+        const bg       = APPROACH_BG[approach]    ?? '#fff'
+        const border   = APPROACH_BORDER[approach] ?? '#666'
+        const editable = id !== null
+        const selected = editable && selectedId === id
+        const liveDist = dragging && dragging.id === id ? dragging.distM : distanceM
+        const distLabel = liveDist < 0
+          ? `${Math.round(Math.abs(liveDist))}m before`
+          : `${Math.round(liveDist)}m`
+
         return (
-          <AdvancedMarker key={key} position={pos} zIndex={10}>
-            <div style={{
-              background: bg,
-              border: `1.5px solid ${border}`,
-              borderRadius: 4,
-              padding: '2px 5px',
-              fontSize: 9,
-              fontFamily: 'monospace',
-              fontWeight: 'bold',
-              color: '#111',
-              whiteSpace: 'nowrap',
-              boxShadow: '0 1px 3px rgba(0,0,0,0.35)',
-              lineHeight: 1.3,
-              textAlign: 'center',
-            }}>
-              <div>{code}</div>
-              <div style={{ fontWeight: 400, fontSize: 8, color: '#555' }}>{distLabel}</div>
+          <AdvancedMarker
+            key={key}
+            position={pos}
+            zIndex={selected ? 20 : 10}
+            draggable={editable}
+            onClick={editable ? () => setSelectedId(cur => (cur === id ? null : id)) : undefined}
+            onDragStart={editable ? () => { setSelectedId(id); setDragging({ id: id!, distM: distanceM }) } : undefined}
+            onDrag={editable ? (e: google.maps.MapMouseEvent) => {
+              if (e.latLng) setDragging({ id: id!, distM: snapDistM(e.latLng) })
+            } : undefined}
+            onDragEnd={editable ? (e: google.maps.MapMouseEvent) => {
+              if (e.latLng) onUpdateSign(id!, { distanceM: Math.round(snapDistM(e.latLng)) })
+              setDragging(null)
+            } : undefined}
+          >
+            <div style={{ position: 'relative' }}>
+              {selected && (
+                <button
+                  onClick={ev => { ev.stopPropagation(); setSelectedId(null); onDeleteSign(id!) }}
+                  title="Remove sign"
+                  style={{
+                    position: 'absolute', top: -10, right: -10, zIndex: 2,
+                    width: 18, height: 18, borderRadius: 9,
+                    background: '#dc2626', color: '#fff', border: '1.5px solid #fff',
+                    fontSize: 11, lineHeight: '14px', fontWeight: 'bold',
+                    cursor: 'pointer', padding: 0,
+                  }}
+                >
+                  ×
+                </button>
+              )}
+              <div style={{
+                background: bg,
+                border: `1.5px solid ${border}`,
+                outline: selected ? '2px solid #fbbf24' : 'none',
+                borderRadius: 4,
+                padding: '2px 5px',
+                fontSize: 9,
+                fontFamily: 'monospace',
+                fontWeight: 'bold',
+                color: '#111',
+                whiteSpace: 'nowrap',
+                boxShadow: '0 1px 3px rgba(0,0,0,0.35)',
+                lineHeight: 1.3,
+                textAlign: 'center',
+                cursor: editable ? 'grab' : 'default',
+              }}>
+                <div>{code}</div>
+                <div style={{ fontWeight: 400, fontSize: 8, color: '#555' }}>{distLabel}</div>
+              </div>
             </div>
           </AdvancedMarker>
         )
