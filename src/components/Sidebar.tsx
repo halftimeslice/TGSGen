@@ -635,7 +635,9 @@ export function Sidebar({ workZone, placingPoint, roadData, fetchStatus, roundab
               <p className="text-xs text-gray-500 italic">Fetching road data…</p>
             )}
             {fetchStatus === 'error' && (
-              <p className="text-xs text-red-400">Could not fetch road data. Check your connection.</p>
+              <p className="text-xs text-red-400">
+                The free map data service is busy right now — wait a minute, then move a pin slightly to retry.
+              </p>
             )}
             {fetchStatus === 'loaded' && roadData && (
               <>

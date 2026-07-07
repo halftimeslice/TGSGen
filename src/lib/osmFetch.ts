@@ -140,10 +140,14 @@ const OVERPASS_ENDPOINTS = [
   'https://overpass-api.de/api/interpreter',
   'https://overpass.kumi.systems/api/interpreter',
   'https://overpass.private.coffee/api/interpreter',
+  'https://lz4.overpass-api.de/api/interpreter',
 ]
 
 // Statuses the public Overpass servers return when overloaded or rate-limiting
 const TRANSIENT_STATUSES = new Set([406, 429, 502, 503, 504])
+
+// A hung server must never hang the app — cap every attempt
+const ATTEMPT_TIMEOUT_MS = 12_000
 
 // The public Overpass servers reject requests intermittently under load —
 // rotate endpoints and retry transient failures before giving up.
@@ -152,12 +156,16 @@ async function overpassPost(query: string, signal?: AbortSignal): Promise<Respon
   let lastError: unknown = null
   for (let attempt = 0; attempt < 4; attempt++) {
     const endpoint = OVERPASS_ENDPOINTS[attempt % OVERPASS_ENDPOINTS.length]
+    const ctrl = new AbortController()
+    const onOuterAbort = () => ctrl.abort()
+    signal?.addEventListener('abort', onOuterAbort)
+    const timer = setTimeout(() => ctrl.abort(), ATTEMPT_TIMEOUT_MS)
     try {
       const res = await fetch(endpoint, {
         method: 'POST',
         body: `data=${encodeURIComponent(query)}`,
         headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-        signal,
+        signal: ctrl.signal,
       })
       if (res.ok) return res
       lastResponse = res
@@ -165,12 +173,15 @@ async function overpassPost(query: string, signal?: AbortSignal): Promise<Respon
     } catch (err) {
       if (signal?.aborted) throw err
       lastError = err
+    } finally {
+      clearTimeout(timer)
+      signal?.removeEventListener('abort', onOuterAbort)
     }
     await new Promise(r => setTimeout(r, 1000 * (attempt + 1)))
     if (signal?.aborted) throw new DOMException('Aborted', 'AbortError')
   }
   if (lastResponse) return lastResponse
-  throw lastError ?? new Error('Overpass unreachable')
+  throw lastError ?? new Error('Road data service unavailable')
 }
 
 // ─── Extended-polyline helpers ───────────────────────────────────────────────
