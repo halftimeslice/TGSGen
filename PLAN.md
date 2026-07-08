@@ -175,7 +175,7 @@ Unchanged from v1 plan — satellite base, sign icons at positions, to-scale tap
 | 5 | Editable TGS | Drag signs (live distances), add from catalogue, delete, reset-to-AI |
 | 6 | PDF export | Edited state exports |
 | 7 | Rulebook second pass + wider scope | Footpaths, intersections, kerbside, shoulder, high-speed |
-| 8 | Detour design + mobile works | The two biggest additions — last |
+| 8 | Detour design | Mobile works generation deferred to a post-v1 update (Zac, 2026-07-07 — never seen a mobile TGS; wants real-API testing first). Rulebook Part 17 already covers mobile rules for when it lands |
 | 9 | Test library + tuning | Score against real approved TGSs; iterate toward the 100% goal |
 
 ---
