@@ -19,9 +19,11 @@ async function pickProvider() {
   const forced = process.env.TGS_PROVIDER
   if (forced === 'mock') return import('./providers/mock.mjs')
   if (forced === 'gemini') return import('./providers/gemini.mjs')
+  if (forced === 'groq') return import('./providers/groq.mjs')
   if (forced === 'claude') return import('./providers/claude.mjs')
   if (process.env.ANTHROPIC_API_KEY) return import('./providers/claude.mjs')
   if (process.env.GEMINI_API_KEY) return import('./providers/gemini.mjs')
+  if (process.env.GROQ_API_KEY) return import('./providers/groq.mjs')
   console.log('No AI key found in .env — using the mock provider')
   return import('./providers/mock.mjs')
 }
