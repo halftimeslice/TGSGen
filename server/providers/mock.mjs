@@ -17,9 +17,12 @@ export async function generate({ user }) {
   const speed = job.roadData?.speedLimit ?? 50
   const wzLen = job.workZone?.lengthM ?? 60
   // Values follow the TCAWS tables so mock output passes the automatic checker
-  const taper = speed <= 45 ? 15 : speed <= 65 ? 30 : speed <= 85 ? 60 : 130
+  // (traffic-control/lateral-shift taper column of Table 7-3 — mock always controls flow)
+  const taper = speed <= 55 ? 15 : speed <= 65 ? 30 : speed <= 75 ? 70 : speed <= 85 ? 80
+    : speed <= 95 ? 90 : speed <= 105 ? 100 : 110
   const coneSpacing = speed <= 45 ? 4 : speed <= 65 ? 8 : speed <= 85 ? 15 : 30
   const D = Math.round(speed / 3.6)
+  const buffer = Math.max(30, D) // TCAWS 7.6.2.3
   const advLevels = speed > 85 ? 3 : speed > 65 ? 2 : 1
   const advance = Math.round((speed > 85 ? 2.5 : speed > 65 ? 2 : 1.5) * D) + 20
   const manualAllowed = speed <= 65
@@ -60,7 +63,7 @@ export async function generate({ user }) {
     ttlTiming: ttlEligible ? { greenWorkS: 35, greenThroughS: 45, allRedS: 5, cycleS: 90, mode: 'FIXED_TIME' } : null,
     personnelRequired: 2,
     flashingArrowRequired: speed > 85,
-    bufferLength: D,
+    bufferLength: buffer,
     delineatorCount: Math.round((wzLen + 2 * taper) / coneSpacing),
     sideRoads: (job.intersections ?? []).map(a => ({
       wayId: a.wayId,

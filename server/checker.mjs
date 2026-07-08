@@ -21,12 +21,27 @@ const KNOWN_SIGN_CODES = new Set([
   'R2-1', 'R2-17',
 ])
 
-// TCAWS Part 3.1 — minimum taper length by approach speed
-function minTaperM(speed) {
+// TCAWS Table 7-3 — taper length by approach speed and taper type.
+// Controlled alternating flow (bat/TTL/PTCD) uses the traffic-control /
+// lateral-shift column; uncontrolled merges use the merge column.
+function minTaperM(speed, controlled) {
   if (speed <= 45) return 15
-  if (speed <= 65) return 30
-  if (speed <= 85) return 60
-  return 130
+  if (speed <= 55) return controlled ? 15 : 30
+  if (speed <= 65) return controlled ? 30 : 60
+  if (speed <= 75) return controlled ? 70 : 115
+  if (speed <= 85) return controlled ? 80 : 130
+  if (speed <= 95) return controlled ? 90 : 145
+  if (speed <= 105) return controlled ? 100 : 160
+  return controlled ? 110 : 180
+}
+
+// TCAWS Table 4-10 — roadwork speed zone length limits by zone speed
+function speedZoneLengthRange(zoneKmh) {
+  if (zoneKmh < 35) return [100, 200]
+  if (zoneKmh <= 40) return [150, 500]
+  if (zoneKmh <= 60) return [150, Infinity]
+  if (zoneKmh <= 70) return [200, Infinity]
+  return [500, Infinity]
 }
 
 // TCAWS Part 11.4 — cone/marker spacing band by approach speed
@@ -76,10 +91,11 @@ export function checkTGS(tgs, job) {
     failures.push(`Flashing arrow sign is MANDATORY above 85 km/h (road is ${speed} km/h); set flashingArrowRequired=true and include T5-15`)
   }
 
-  // ── Taper length (TCAWS 3.1) ───────────────────────────────────────────
-  const taperMin = minTaperM(speed)
+  // ── Taper length (TCAWS Table 7-3) ─────────────────────────────────────
+  const controlledFlow = tgs.controlMethod !== 'PASSIVE'
+  const taperMin = minTaperM(speed, controlledFlow)
   if (typeof tgs.taperLength !== 'number' || tgs.taperLength < taperMin - 0.5) {
-    failures.push(`Taper length must be at least ${taperMin} m at ${speed} km/h (TCAWS Table D-1); you gave ${tgs.taperLength} m`)
+    failures.push(`Taper length must be at least ${taperMin} m at ${speed} km/h for ${controlledFlow ? 'controlled alternating flow (traffic control / lateral shift taper)' : 'an uncontrolled merge (merge taper)'} (TCAWS Table 7-3); you gave ${tgs.taperLength} m`)
   }
 
   // ── Cone spacing (TCAWS 11.4) ──────────────────────────────────────────
@@ -103,9 +119,10 @@ export function checkTGS(tgs, job) {
     failures.push(`Above 65 km/h advance warning needs 2 levels (2D then 1D — TCAWS 3.3); you gave ${adv.levels}`)
   }
 
-  // ── End buffer / recovery (TCAWS 3.2) ──────────────────────────────────
-  if (typeof tgs.bufferLength !== 'number' || tgs.bufferLength < D * 0.95) {
-    failures.push(`End buffer (recovery) must be at least 1D = ${Math.round(D)} m; you gave ${tgs.bufferLength} m`)
+  // ── Safety buffer (TCAWS 7.6.2.3: ≥30 m; use larger of 30 m or 1D) ─────
+  const bufferMin = Math.max(30, D)
+  if (typeof tgs.bufferLength !== 'number' || tgs.bufferLength < bufferMin * 0.95) {
+    failures.push(`Safety buffer must be at least ${Math.round(bufferMin)} m (TCAWS 7.6.2.3 requires ≥30 m; Part 3.2 requires ≥1D = ${Math.round(D)} m — use the larger); you gave ${tgs.bufferLength} m`)
   }
 
   // ── Speed zone (TCAWS 9.1) ─────────────────────────────────────────────
@@ -122,6 +139,14 @@ export function checkTGS(tgs, job) {
     const hasSpeedSign = (tgs.signs ?? []).some(s => s.code === 'T1-3')
     if (!hasSpeedSign) {
       failures.push(`Speed zone is active but no T1-3 speed limit sign is placed — required at zone entry and exit (TCAWS 9.2)`)
+    }
+    const zoneLen = tgs.speedZone.endDistanceM - tgs.speedZone.startDistanceM
+    const [zoneMin, zoneMax] = speedZoneLengthRange(tgs.speedZone.speedKmh)
+    if (zoneLen < zoneMin) {
+      failures.push(`A ${tgs.speedZone.speedKmh} km/h roadwork speed zone must be at least ${zoneMin} m long (TCAWS Table 4-10); yours is ${Math.round(zoneLen)} m (start ${tgs.speedZone.startDistanceM} m to end ${tgs.speedZone.endDistanceM} m)`)
+    }
+    if (zoneLen > zoneMax) {
+      failures.push(`A ${tgs.speedZone.speedKmh} km/h roadwork speed zone must not exceed ${zoneMax} m (TCAWS Table 4-10); yours is ${Math.round(zoneLen)} m`)
     }
   }
 

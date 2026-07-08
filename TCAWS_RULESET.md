@@ -664,6 +664,185 @@ SIGNS: All day signs remain; beacon optional on advance sign
 
 ---
 
+## Part 12: Dimension D Master Rules & High-Speed Tables (verified TCAWS §7.3, §7.6.2, §6.2.6, §4.5.6)
+
+### 12.1 Dimension D — applies at ALL speeds up to 110 km/h
+
+D (metres) = the speed (km/h) of traffic **at the position where the device is placed**, expressed as metres.
+Speed source, in order of preference: measured speed → predicted speed → preceding roadwork speed zone → existing posted limit (Note to Table 7-3).
+So D=80 m in an 80 km/h zone, D=110 m in a 110 km/h zone. D must be stated on the TGS (§7.4.1).
+
+Derived requirements (Table 7-2):
+| Purpose | Requirement |
+|---|---|
+| Sight distance to PTCD or traffic controller | ≥ 1.5D |
+| Sight distance to end-of-queue | 2D if approach speed >65 km/h; 1.5D if <65 km/h |
+| Sign spacing — single advance sign | 2D if approach ≥65 km/h; 1D if <65 km/h (Table 6-3) |
+| Sign spacing — multiple advance signs | 1D at all speeds; sign nearest the work placed D before the taper, others at successive D (Table 6-3) |
+| Distance between tapers, multi-lane | 1.5D |
+
+### 12.2 Taper lengths by speed band (Table 7-3 — recommended; increase for poor sight distance/compliance)
+
+| Speed at taper (km/h) | Traffic control taper | Lateral shift taper | Merge taper |
+|---|---|---|---|
+| ≤45 | 15 m | 15 m | 15 m |
+| 46–55 | 15 m | 15 m | 30 m |
+| 56–65 | 30 m | 30 m | 60 m |
+| 66–75 | N/A | 70 m | 115 m |
+| 76–85 | N/A | 80 m | 130 m |
+| 86–95 | N/A | 90 m | 145 m |
+| 96–105 | N/A | 100 m | 160 m |
+| >105 | N/A | 110 m | 180 m |
+
+Taper types: traffic control taper (immediately after PTCD/controller position), lateral shift taper (shift without conflicting stream), merge taper (lane merges into another).
+Distance BETWEEN successive tapers (Table 7-4): ≤45: 10 m; 46–55: 25 m; 56–65: 70 m; >65: 1.5 × speed (m).
+On 3+ lane carriageways closing two lanes: close one lane at a time, tapers ≥1.5D apart (§7.7.3.5).
+
+### 12.3 Safety buffer (§7.6.2.3 — MUST)
+
+- ≥ **30 m** unoccupied space between taper and work area (use the larger of 30 m or 1D where Part 3.2 gives 1D).
+- No work, plant, storage or workers in the buffer (except passing through).
+- Not required on departure ends, but required at BOTH ends if traffic can approach from both.
+
+### 12.4 Roadwork speed zone lengths (Table 4-10 — MUST)
+
+| Zone | Minimum length | Maximum length |
+|---|---|---|
+| <35 km/h | 100 m | 200 m |
+| 40 km/h | 150 m | 500 m |
+| 60 km/h | 150 m | not specified |
+| 70 km/h transition | 200 m | not specified |
+| 80 km/h | 500 m | not specified |
+| 80 km/h transition | 300 m | not specified |
+
+Zones may be OFFSET (different restriction per direction) e.g. shoulder work not affecting the opposing lane (§4.5.5). Do not make zones longer than needed — hurts credibility/compliance.
+
+### 12.5 Sight distances for intermittent work (Table 7-9)
+
+Minimum sight distance = **3D with a lookout person, 6D without** (e.g. 60 km/h: 180 m / 360 m). Applies at all speeds.
+
+---
+
+## Part 13: Pedestrians & Footpaths (verified TCAWS §4.4.2 Table 4-4 as amended by TD 00003, §4.4.3)
+
+### 13.1 Temporary footpaths — MUST
+
+- Clear path of travel, clearly signposted for wayfinding to/from existing pedestrian facilities.
+- All-weather standard, incl. ramps over gutters that can run >1 m/s water.
+- Material/surface/performance equivalent to adjacent footpaths; no trip hazards for any pedestrian type (wheelchairs, prams, walking frames).
+- Width: ≥ **1 m at local constrictions**; ≥ **2 m elsewhere**; more at concentration points (shops, schools, bus/light-rail stops, stations, median crossing points).
+- TTM signs/devices must NOT reduce any footpath below 1 m unless an alternative pedestrian facility is provided.
+
+### 13.2 Separation & crossings
+
+- Work area defined by fencing; pedestrians diverted onto roadway must be separated from traffic by mesh fence minimum — else safety barrier, alternative path, or redesign.
+- Separate pedestrians from trenches, or plate the trenches.
+- If an existing crossing can't be kept, provide an equivalent alternative as near as possible. Prevent crossing (and use active control: pedestrian-actuated signals, PTCD, or a chicane facing oncoming traffic) where medians/refuges split same-direction flows, speeds are high, congregation space is insufficient, or stopping sight distance is unavailable.
+- Where traffic runs temporarily in the wrong direction: containment fences, guidance personnel, or T8-5 LOOK BOTH WAYS on both sides facing pedestrians.
+- Lighting required for diverted paths at crossings; manage security risk (lighting/cameras/design).
+
+### 13.3 Cyclists (§4.4.3)
+
+- Where provision determined: smooth shoulder ≥ **1.2 m** wide (≥ **2 m** if adjacent lane speed >60 km/h), swept regularly.
+- Grooved/milled surfaces: display CYCLE HAZARD GROOVED ROAD (T2-207n) on all approaches.
+- Signs above cyclist head height; devices must not force cyclists off safe paths; works affecting cycle ways >1 day must be visible at night.
+
+---
+
+## Part 14: Road Closures & Detours (verified TCAWS §7.7.2.2–7.7.2.4)
+
+### 14.1 Full road closure — MUST
+
+- ROAD CLOSED (T2-4) sign + barrier boards at the start of the closure.
+- Speed zones reduced on approach.
+- Reduce lanes progressively on approach (e.g. close left lane before right on a 2-lane one-way).
+- If an approach/exit lane is closed at an intersection, close the corresponding lane on the OPPOSITE side of the intersection too.
+- Ramp closures: reinforce with a continuous/chicaned line of cones at 1 m spacing.
+- Property access: provide alternative access, or delineated local-traffic path (LOCAL TRAFFIC ONLY sign, no large gaps in delineation), or pedestrian-only access.
+
+### 14.2 Detours
+
+- DETOUR AHEAD sign (TCAWS code T1-6) or VMS in advance; **first detour marker ≤100 m past it**. Markers mounted horizontally; arrow vertical, 45° up left/right, or horizontal left/right.
+- Worker symbolic sign on the left in advance of the work area if workers visible to traffic.
+- Side tracks/crossovers: maintaining-authority approval, adequate pavement strength/width for expected traffic, provision for vulnerable users & public transport, local access, delineation (linemarking, guide posts, RRPMs, signs).
+
+---
+
+## Part 15: Intersections & Working at Traffic Signals (verified TCAWS §7.7.4.2, §7.7.3.2)
+
+- Any arrangement affecting signal operation (incl. flashing yellow) needs road occupancy licence approval; TMC implements changes.
+- If alternate traffic control is needed at/near signals: **flash the signals yellow AND control ALL approaches** before using a PTCD or STOP/SLOW bat.
+- Consider phasing impact of detoured traffic and of closing turn lanes; contact TMC for real-time phasing changes.
+- Advertise works in advance (VMS, letter drops, press).
+- If pedestrian signals are turned off or a crossing closed: adequate alternative pedestrian provision is mandatory.
+- Lane closures at intersections follow §7.7.3.2 (below) + mirrored-closure rule (Part 14.1).
+
+### 15.1 Closing a lane (§7.7.3.2 — MUST)
+
+- ≥ **2 temporary hazard markers (T5-4/T5-5) per closed lane**; cones/bollards form the taper and travel path.
+- Hazard markers only on the side primarily guiding traffic away from the hazard — never both sides of a path.
+- Work area beyond a crest/curve with <100 m visibility: extend the layout in advance of the crest/curve.
+- Multi-lane <85 km/h and <20,000 vpd: consider flashing arrow in addition to/instead of markers; include lane status signs (T2-6 family); TMA where required.
+- Multi-lane >85 km/h and >20,000 vpd (or listed motorways): flashing arrow sign **required** at each merge taper, visible from taper installation to removal.
+- Dual carriageways: duplicate signs both sides where practical.
+
+---
+
+## Part 16: Shoulder, Verge & Kerbside Work (verified TCAWS §7.7.3.3, §7.7.3.4)
+
+### 16.1 Shoulder closure
+
+- Temporary hazard marker 20 m before the work area + ≥1 more at 20 m spacing in advance; markers ≥1 m from the edge line.
+- Barrier board at the beginning and end of the work area.
+- SHOULDER CLOSED (T2-19n) placed **D in advance** of the first hazard marker.
+- Consider cyclists, buses, resident vehicles and parking that use the shoulder (see Part 13).
+
+### 16.2 Single lane operation — passive GIVE WAY control (§7.7.3.4)
+
+Permitted ONLY when ALL of: ≤100 vpd AND speed <75 km/h AND each entry visible from the other AND work area <100 m long AND ≥300 m sight to opposing traffic beyond the far end for the yielding direction.
+- GIVE WAY (R1-2) + ONE LANE (R9-9n) assembly assigns priority; NO OVERTAKING OR PASSING (R6-1) at the start of the single lane for the opposite direction.
+
+---
+
+## Part 17: Mobile / Dynamic Works (verified TCAWS §7.8)
+
+### 17.1 Work categories (§7.8.1)
+
+- **Frequently changing** — regular moves between successive locations, minimal warning needed.
+- **Continuous** — progressively moving vehicles along the roadway (e.g. line marking, sweeping).
+- **Intermittent** — on travel lanes in gaps in traffic, no adjustment affecting road users.
+
+### 17.2 Works convoys (Table 7-7)
+
+- Shadow vehicle protects workers on foot/plant (see Part 5.6 for distances); tail vehicle follows to warn/divert (a SECOND tail vehicle required on motorway-type roads).
+- Advance warning vehicle ~**1 km** behind the convoy; **not required when speed zone <65 km/h with 2D sight distance**.
+- All signs/devices mounted on moving convoy vehicles; every convoy vehicle/plant (except minor plant) fitted with a flashing arrow sign.
+
+### 17.3 Frequently changing work — eligibility (§7.8.3 — MUST, else set up static)
+
+- **Within a traffic lane:** speed <65 km/h AND ≤20 min per location (up to 1 h if <40 vph).
+- **Median or verge:** sight per Table 7-9 (or 50 m min if not in adjacent lane) AND speed <75 km/h AND per-location duration ≤1 h (<40 vph) / ≤40 min (40–150 vph) / ≤20 min (>150 vph).
+- Short-term partial closure without advance warning allowed only if: vehicle warning device visible ≥250 m AND no traffic control needed AND (<20 vpd OR room for two-way traffic past the work).
+
+### 17.4 Minimum controls for frequently changing work (§7.8.3.1)
+
+- Shadow vehicle or works convoy protecting workers/plant; contingency plan to abandon work instantly.
+- Rotating/flashing yellow light on every work vehicle, visible ≥150 m (<65 km/h zones) or ≥250 m (elsewhere).
+- Sight distances per Table 7-9 (Part 12.5).
+- Advance signs ≤**2 km** ahead of each work position; opposing-direction advance signs never >2 km apart; relocate progressively.
+- At each advance sign location: Workers symbolic (T1-5) [workers on foot] or ROAD PLANT AHEAD (T1-3-1) [plant only] together with NEXT 2km (T1-28).
+
+### 17.5 Low-volume roads without shadow vehicle (§7.8.3.2)
+
+Allowed only if ALL of: <1500 vpd, following-traffic sight ≥1.5D, ≤2 plant items within sight of each other, posted speed <85 km/h, ≥1.5 m from live traffic. (Typical: grading, resheeting, shoulder grading.)
+- Work in subsections ≤2 km (extendable to next turning point, ≤6 km total), all signs up before starting each subsection.
+- Sight to vehicle warning sign >250 m throughout: ROADWORK NEXT __km (T1-24) at each end.
+- Sight <250 m anywhere: GRADER AHEAD (T1-4) or ROAD PLANT AHEAD (T1-3-1) + NEXT 2km (T1-28) each approach, ≥100 m before any windrow; if traffic speed >75 km/h also impose a <65 km/h speed zone.
+- Fresh-surface hazards: post T3-3 slippery / T3-6 soft edges / T3-7 rough surface / T3-13 gravel road / T3-9 loose stones / T3-14 loose surface as applicable.
+- >1500 vpd: must run as continuous or static work instead.
+
+---
+
 ## References & Source Sections
 
 | Topic | TCAW Section |
@@ -680,10 +859,16 @@ SIGNS: All day signs remain; beacon optional on advance sign
 | Pedestrians | 4.4.2 |
 | Motorcyclists | 4.4.4 |
 | Installation sequence | 6.4 |
+| Dimension D & high-speed tables (Parts 12) | 7.3, 7.6.2, Table 6-3, Table 7-3/7-4, 4.5.6 |
+| Pedestrians/footpaths amended, cyclists (Part 13) | 4.4.2 + TD 00003, 4.4.3 |
+| Road closures & detours (Part 14) | 7.7.2.2–7.7.2.4 |
+| Intersections & signals (Part 15) | 7.7.4.2, 7.7.3.2 |
+| Shoulder/verge, single-lane operation (Part 16) | 7.7.3.3, 7.7.3.4 |
+| Mobile/dynamic works (Part 17) | 7.8, Tables 7-6/7-7/7-9 |
 
 ---
 
 **Document Status:** APPROVED FOR IMPLEMENTATION  
-**Version:** 1.0 (extracted from TCAW v6.1 + TD amendments)  
-**Last Updated:** 2026-05-18  
-**Next Review:** Before Phase 3 (Decision Engine Code Implementation)
+**Version:** 2.0 (second extraction pass: Parts 12–17 — high-speed tables, pedestrians/footpaths as amended, closures/detours, intersections, shoulder/verge, mobile works)  
+**Last Updated:** 2026-07-07  
+**Next Review:** Phase 8 (detour + mobile works generation)
