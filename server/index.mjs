@@ -13,10 +13,19 @@ try {
   // no .env — rely on the environment
 }
 
-// Provider swap point: Claude by default; TGS_PROVIDER=mock for key-less testing
-const provider = process.env.TGS_PROVIDER === 'mock'
-  ? await import('./providers/mock.mjs')
-  : await import('./providers/claude.mjs')
+// Provider swap point. Explicit TGS_PROVIDER (claude | gemini | mock) wins;
+// otherwise auto-pick whichever provider has a key in .env, mock as fallback.
+async function pickProvider() {
+  const forced = process.env.TGS_PROVIDER
+  if (forced === 'mock') return import('./providers/mock.mjs')
+  if (forced === 'gemini') return import('./providers/gemini.mjs')
+  if (forced === 'claude') return import('./providers/claude.mjs')
+  if (process.env.ANTHROPIC_API_KEY) return import('./providers/claude.mjs')
+  if (process.env.GEMINI_API_KEY) return import('./providers/gemini.mjs')
+  console.log('No AI key found in .env — using the mock provider')
+  return import('./providers/mock.mjs')
+}
+const provider = await pickProvider()
 
 const PORT = Number(process.env.TGS_SERVER_PORT ?? 8787)
 const MAX_BODY_BYTES = 25 * 1024 * 1024 // room for an aerial snapshot
