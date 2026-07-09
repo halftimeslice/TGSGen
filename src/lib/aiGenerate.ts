@@ -112,28 +112,39 @@ export async function generateTGS(input: GenerateJobInput): Promise<{ result: TG
       distanceAlongWzM: a.distanceAlongWzM,
       joinSide: a.joinSide,
     })),
-    roundabout: roundabout
-      ? {
-          type: roundabout.type,
-          center: roundabout.center,
-          arms: roundabout.arms.map(a => {
-            const role = ring ? classifyArm(ring, a) : null
-            return {
-              wayId: a.wayId,
-              name: a.name,
-              lanes: a.lanes,
-              speedLimit: a.speedLimit,
-              isOneWay: a.isOneWay,
-              oneWayDir: a.oneWayDir,
-              angleFromCenter: Math.round(a.angleFromCenter),
-              // 'entry'/'exit' = the arm carries the selected route
-              routeRole: role === 'entry' || role === 'exit' ? role : null,
-              // Arm meets the ring on the closed side's arc — closed by default
-              defaultClosed: closedArc !== null && role === closedArc,
-            }
-          }),
+    roundabout: null as null | {
+      type: RoundaboutData['type']
+      center: RoundaboutData['center']
+      arms: Array<Record<string, unknown>>
+    },
+  }
+
+  // Arms carrying the selected route (entry/exit) are handled by the main
+  // closure — every other arm needs its own explicit treatment (#2).
+  const routeArmWayIds = new Set<string>()
+  if (roundabout) {
+    payload.roundabout = {
+      type: roundabout.type,
+      center: roundabout.center,
+      arms: roundabout.arms.map(a => {
+        const role = ring ? classifyArm(ring, a) : null
+        const routeRole = role === 'entry' || role === 'exit' ? role : null
+        if (routeRole) routeArmWayIds.add(a.wayId)
+        return {
+          wayId: a.wayId,
+          name: a.name,
+          lanes: a.lanes,
+          speedLimit: a.speedLimit,
+          isOneWay: a.isOneWay,
+          oneWayDir: a.oneWayDir,
+          angleFromCenter: Math.round(a.angleFromCenter),
+          // 'entry'/'exit' = the arm carries the selected route
+          routeRole,
+          // Arm meets the ring on the closed side's arc — closed by default
+          defaultClosed: closedArc !== null && role === closedArc,
         }
-      : null,
+      }),
+    }
   }
 
   const res = await fetch('/api/generate', {
@@ -148,16 +159,48 @@ export async function generateTGS(input: GenerateJobInput): Promise<{ result: TG
   }
 
   const ai = body.tgs as AiTGS
-  return { result: convertToTGSResult(ai, intersections), usage: body.usage }
+  return { result: convertToTGSResult(ai, intersections, roundabout, routeArmWayIds), usage: body.usage }
+}
+
+// A roundabout arm treated as a side road — synthesise the IntersectionArm
+// shape the renderer/sidebar expect from the roundabout arm data.
+function armFromRoundaboutArm(a: RoundaboutData['arms'][number]): IntersectionArm {
+  return {
+    wayId: a.wayId,
+    name: a.name,
+    classification: 'road',
+    speedLimit: a.speedLimit,
+    lanes: a.lanes,
+    connectionNode: a.connectionNode,
+    distanceAlongWzM: 0,
+    geometry: a.geometry,
+    joinSide: 'left',
+    atRoundabout: true,
+  }
 }
 
 // Convert the AI's answer into the TGSResult shape the renderer draws
-function convertToTGSResult(ai: AiTGS, intersections: IntersectionArm[]): TGSResult {
+function convertToTGSResult(
+  ai: AiTGS,
+  intersections: IntersectionArm[],
+  roundabout: RoundaboutData | null,
+  routeArmWayIds: Set<string>,
+): TGSResult {
   const warnings = [...ai.warnings]
 
   const intersectionTreatments: IntersectionTreatment[] = []
   for (const sr of ai.sideRoads) {
-    const arm = intersections.find(a => a.wayId === sr.wayId)
+    // First an intersecting road along the work zone…
+    let arm = intersections.find(a => a.wayId === sr.wayId)
+    // …otherwise a roundabout arm (matched on its way or its paired one-way way)
+    if (!arm && roundabout) {
+      const rabArm = roundabout.arms.find(a => a.wayId === sr.wayId || a.pairedWayId === sr.wayId)
+      if (rabArm) {
+        // Route arms are covered by the main closure — don't double-draw them
+        if (routeArmWayIds.has(rabArm.wayId)) continue
+        arm = armFromRoundaboutArm(rabArm)
+      }
+    }
     if (!arm) {
       warnings.push(`AI referenced an unknown side road (${sr.name ?? sr.wayId}) — treatment not drawn`)
       continue

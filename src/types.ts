@@ -58,6 +58,7 @@ export type RoundaboutArm = {
   oneWayDir: 'entry' | 'exit' | null
   connectionNode: LatLng
   angleFromCenter: number
+  geometry: LatLng[]            // arm road geometry — used to draw its treatment on the map
 }
 
 export type RoundaboutData = {
@@ -125,6 +126,7 @@ export type IntersectionArm = {
   distanceAlongWzM: number   // metres from work zone start
   geometry: LatLng[]
   joinSide: 'left' | 'right' // which side of the main road polyline this arm joins from
+  atRoundabout?: boolean     // true = this arm meets a roundabout, not a point along the WZ
 }
 
 export type IntersectionTreatment = {

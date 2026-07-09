@@ -18,16 +18,16 @@ const API_KEY = import.meta.env.VITE_GOOGLE_MAPS_API_KEY as string
 const EMPTY_WORK_ZONE: WorkZone = { start: null, end: null, closedSide: null, polyline: null, polylineSegments: null }
 
 function defaultWorkParams(): WorkParams {
-  const today = new Date()
-  const start = today.toISOString().split('T')[0]
-  const end = new Date(today)
-  end.setDate(end.getDate() + 6)
+  // Default to a single day of work, starting tomorrow
+  const tomorrow = new Date()
+  tomorrow.setDate(tomorrow.getDate() + 1)
+  const date = tomorrow.toISOString().split('T')[0]
   return {
     workType: 'LANE_CLOSURE',
     affected: 'road',
     isMobile: false,
-    startDate: start,
-    endDate: end.toISOString().split('T')[0],
+    startDate: date,
+    endDate: date,
     dayStart: '07:00',
     dayEnd: '17:00',
     worksDescription: '',
@@ -52,6 +52,8 @@ export default function App() {
   const [generation, setGeneration] = useState<GenerationState>({ status: 'idle' })
   const [intersections, setIntersections] = useState<IntersectionArm[]>([])
   const [mainView, setMainView] = useState<'map' | 'diagram'>('map')
+  // Map markers show sign pictures by default; toggle to reveal the codes
+  const [showSignIcons, setShowSignIcons] = useState(true)
   const [extendedPolyline, setExtendedPolyline] = useState<import('./types').LatLng[] | null>(null)
   const [wzStartOffsetM, setWzStartOffsetM] = useState<number>(0)
   const [ring, setRing] = useState<RingInfo | null>(null)
@@ -205,6 +207,8 @@ export default function App() {
     setPlacingPoint(p)
   }
 
+  // Full reset — clears the work zone and any generated TGS, but keeps the
+  // selected address so the map stays where the user was working.
   function handleClear() {
     setWorkZone(EMPTY_WORK_ZONE)
     setPlacingPoint('start')
@@ -217,6 +221,10 @@ export default function App() {
     setExtendedPolyline(null)
     setWzStartOffsetM(0)
     setRing(null)
+    setTgsResult(null)
+    setAiTgsResult(null)
+    setGeneration({ status: 'idle' })
+    setMainView('map')
   }
 
   const handlePlaceSelect = useCallback((place: google.maps.places.PlaceResult) => {
@@ -268,6 +276,15 @@ export default function App() {
               >
                 TGS Diagram
               </button>
+              {mainView === 'map' && (
+                <button
+                  onClick={() => setShowSignIcons(v => !v)}
+                  title="Switch between sign pictures and sign codes on the map"
+                  className="px-4 py-1.5 rounded text-xs font-semibold transition-colors text-gray-400 hover:text-white"
+                >
+                  {showSignIcons ? 'Show Codes' : 'Show Signs'}
+                </button>
+              )}
               <button
                 onClick={handleExportPdf}
                 disabled={exporting}
@@ -290,6 +307,7 @@ export default function App() {
               tgsResult={tgsResult}
               extendedPolyline={extendedPolyline}
               wzStartOffsetM={wzStartOffsetM}
+              showSignIcons={showSignIcons}
               onUpdateSign={handleUpdateSign}
               onDeleteSign={handleDeleteSign}
             />

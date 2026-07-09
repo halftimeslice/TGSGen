@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useMap, AdvancedMarker } from '@vis.gl/react-google-maps'
 import type { TGSResult, LatLng } from '../types'
+import { SignIcon } from './SignIcon'
 import {
   interpolatePolyline,
   samplePolylineRange,
@@ -14,6 +15,7 @@ type Props = {
   polyline: LatLng[]           // work zone polyline (between pins)
   extendedPolyline: LatLng[]   // full road geometry beyond pins — for curvature-correct rendering
   wzStartOffsetM: number        // distance along extendedPolyline to the work zone start
+  showSignIcons: boolean        // true = draw sign pictures, false = draw sign codes
   onUpdateSign: (id: string, patch: Partial<TGSResult['signs'][number]>) => void
   onDeleteSign: (id: string) => void
 }
@@ -45,22 +47,26 @@ const APPROACH_BORDER: Record<string, string> = {
 }
 
 const SIGN_OFFSET_M = 6 // perpendicular offset so A/B labels don't sit on the centreline
+const SIGN_SPREAD_M = 4 // extra sideways gap for signs that share the same spot
 
-// Position a sign marker — uses the extended polyline so curvature is correct
+// Position a sign marker — uses the extended polyline so curvature is correct.
+// lateralM is signed metres perpendicular to travel (negative = left of the
+// road line, positive = right).
 function signPos(
   extPolyline: LatLng[],
   wzOffset: number,
   distM: number,
-  perpSide: number,  // -1 = left, 0 = centre, 1 = right
+  lateralM: number,
 ): LatLng {
   const absM = wzOffset + distM
   const pos = interpolatePolyline(extPolyline, absM)
-  if (perpSide === 0) return pos
+  if (lateralM === 0) return pos
   const bearing = bearingAtDistance(extPolyline, Math.max(0, absM))
-  return offsetPoint(pos, (bearing + perpSide * 90 + 360) % 360, SIGN_OFFSET_M)
+  const dir = lateralM > 0 ? 1 : -1
+  return offsetPoint(pos, (bearing + dir * 90 + 360) % 360, Math.abs(lateralM))
 }
 
-export function TGSMapOverlay({ tgsResult, extendedPolyline, wzStartOffsetM, onUpdateSign, onDeleteSign }: Props) {
+export function TGSMapOverlay({ tgsResult, extendedPolyline, wzStartOffsetM, showSignIcons, onUpdateSign, onDeleteSign }: Props) {
   const map = useMap()
   const [selectedId, setSelectedId] = useState<string | null>(null)
   // Live distance readout for the sign currently being dragged
@@ -166,11 +172,21 @@ export function TGSMapOverlay({ tgsResult, extendedPolyline, wzStartOffsetM, onU
       key: string; id: string | null; pos: LatLng; code: string; approach: string; distanceM: number
     }> = []
 
+    // Count how many signs land on each spot so co-located ones can fan out
+    const stackAt = new Map<string, number>()
+
     for (const sign of tgsResult.signs) {
       if (isBulkDelineation(sign.code)) continue
 
       const perpSide = sign.approach === 'A' ? -1 : sign.approach === 'B' ? 1 : 0
-      const pos = signPos(extendedPolyline, wzStartOffsetM, sign.distanceM, perpSide)
+      // When several signs share the same distance + side, push each extra one
+      // further out to the side so it sits beside the first, not on top of it.
+      const key = `${Math.round(sign.distanceM)}:${perpSide}`
+      const stackIdx = stackAt.get(key) ?? 0
+      stackAt.set(key, stackIdx + 1)
+      const spreadDir = perpSide === 0 ? 1 : perpSide  // centred signs fan to the right
+      const lateralM = perpSide * SIGN_OFFSET_M + spreadDir * stackIdx * SIGN_SPREAD_M
+      const pos = signPos(extendedPolyline, wzStartOffsetM, sign.distanceM, lateralM)
 
       result.push({
         key: sign.id ?? `main:${sign.code}:${sign.approach}:${Math.round(sign.distanceM)}`,
@@ -253,25 +269,55 @@ export function TGSMapOverlay({ tgsResult, extendedPolyline, wzStartOffsetM, onU
                   ×
                 </button>
               )}
-              <div style={{
-                background: bg,
-                border: `1.5px solid ${border}`,
-                outline: selected ? '2px solid #fbbf24' : 'none',
-                borderRadius: 4,
-                padding: '2px 5px',
-                fontSize: 9,
-                fontFamily: 'monospace',
-                fontWeight: 'bold',
-                color: '#111',
-                whiteSpace: 'nowrap',
-                boxShadow: '0 1px 3px rgba(0,0,0,0.35)',
-                lineHeight: 1.3,
-                textAlign: 'center',
-                cursor: editable ? 'grab' : 'default',
-              }}>
-                <div>{code}</div>
-                <div style={{ fontWeight: 400, fontSize: 8, color: '#555' }}>{distLabel}</div>
-              </div>
+              {showSignIcons ? (
+                <div style={{
+                  display: 'flex',
+                  flexDirection: 'column',
+                  alignItems: 'center',
+                  cursor: editable ? 'grab' : 'default',
+                }}>
+                  <div style={{
+                    borderRadius: 5,
+                    padding: 2,
+                    outline: selected ? '2px solid #fbbf24' : 'none',
+                    filter: 'drop-shadow(0 1px 2px rgba(0,0,0,0.55))',
+                    lineHeight: 0,
+                  }}>
+                    <SignIcon code={code} px={42} />
+                  </div>
+                  <div style={{
+                    marginTop: 1,
+                    background: 'rgba(17,17,17,0.8)',
+                    color: '#fff',
+                    borderRadius: 3,
+                    padding: '0 3px',
+                    fontSize: 8,
+                    fontFamily: 'monospace',
+                    whiteSpace: 'nowrap',
+                    lineHeight: 1.4,
+                  }}>{distLabel}</div>
+                </div>
+              ) : (
+                <div style={{
+                  background: bg,
+                  border: `1.5px solid ${border}`,
+                  outline: selected ? '2px solid #fbbf24' : 'none',
+                  borderRadius: 4,
+                  padding: '2px 5px',
+                  fontSize: 9,
+                  fontFamily: 'monospace',
+                  fontWeight: 'bold',
+                  color: '#111',
+                  whiteSpace: 'nowrap',
+                  boxShadow: '0 1px 3px rgba(0,0,0,0.35)',
+                  lineHeight: 1.3,
+                  textAlign: 'center',
+                  cursor: editable ? 'grab' : 'default',
+                }}>
+                  <div>{code}</div>
+                  <div style={{ fontWeight: 400, fontSize: 8, color: '#555' }}>{distLabel}</div>
+                </div>
+              )}
             </div>
           </AdvancedMarker>
         )

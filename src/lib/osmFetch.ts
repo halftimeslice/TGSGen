@@ -715,6 +715,7 @@ function buildRoundaboutData(rabWays: any[], candidateArmWays: any[]): Roundabou
       oneWayDir,
       connectionNode,
       angleFromCenter,
+      geometry: armGeom.map(n => ({ lat: n.lat, lng: n.lon })),
     })
   }
 

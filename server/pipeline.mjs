@@ -17,9 +17,13 @@ Hard rules:
 - Use only sign codes that exist in the sign library. If TCAWS requires a device the library has no code for (e.g. detour markers, barrier boards), do NOT invent a code — describe it in the relevant notes/complianceNotes instead.
 - Sign positions are metres along the road from the work zone start (distanceM). Negative values are on the approach before the work zone. Approach 'A' faces traffic arriving at the work zone start; approach 'B' faces traffic arriving from the other end.
 - Every intersecting road provided in the input must be given a treatment in sideRoads, keyed by its wayId.
-- Roundabout jobs: arms with routeRole 'entry'/'exit' carry the selected route. Arms with defaultClosed:true meet the ring inside the closed portion — treat them as closed at the roundabout (with signage in sideRoads if they also appear in intersections) unless that would be unsafe; explain any deviation in warnings.
+- Roundabout jobs: arms with routeRole 'entry'/'exit' carry the selected route and are handled by the main work-zone closure — do NOT give them a separate sideRoads entry. EVERY OTHER roundabout arm (routeRole null) MUST get its own explicit sideRoads entry keyed by its wayId, so no arm approaching the roundabout is left without a treatment. Arms with defaultClosed:true meet the ring inside the closed portion — close them at the roundabout (ROAD_CLOSURE with the appropriate barrier/diversion signage). Arms that stay open still need a treatment: give-way/controller signage warning drivers of the works ahead as they enter the roundabout. Only deviate if closing an arm would be unsafe, and explain any deviation in warnings.
 - If the job cannot be done safely as described, still produce the safest compliant design and explain the problem in warnings.
-- justification must be plain language a reviewing engineer can check against the TCAWS tables.`
+
+Plain-language rule — the people reading this on site are traffic controllers and crew, not engineers:
+- Write justification, every notes entry, and every complianceNotes entry in short, plain English a tradie can read at a glance. One idea per line.
+- Say what to do and why in everyday words. Prefer "Put the ROAD WORK AHEAD sign 75 m before the work so drivers get warning in time" over "Advance warning positioned at 1×D per TCAWS Table 3-2 to ensure adequate PRT."
+- You may cite a TCAWS/AS clause in brackets at the end of a line for the reviewer, but the sentence itself must make sense without it. Avoid jargon and acronyms unless they're common on site (e.g. TTL is fine); if you must use one, spell it out once.`
 
 // One cache breakpoint on the last system block caches all three together
 // (prefix caching): ground rules + ruleset + sign catalogue stay stable

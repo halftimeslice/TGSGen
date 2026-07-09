@@ -224,5 +224,15 @@ export function checkTGS(tgs, job) {
     failures.push(`Every intersecting road must receive a sideRoads treatment; missing: ${names}`)
   }
 
+  // ── Roundabout arm coverage ────────────────────────────────────────────
+  // Every arm approaching the roundabout, except the entry/exit route arms
+  // (handled by the main closure), must get its own sideRoads treatment.
+  const rabArms = job.roundabout?.arms ?? []
+  const missingArms = rabArms.filter(a => a.routeRole == null && !covered.has(a.wayId))
+  if (missingArms.length > 0) {
+    const names = missingArms.map(a => `${a.name ?? 'unnamed'} (wayId ${a.wayId})`).join(', ')
+    failures.push(`Every roundabout arm that is not on the selected route must receive a sideRoads treatment; missing: ${names}`)
+  }
+
   return failures
 }

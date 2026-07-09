@@ -5,6 +5,12 @@ import { SearchBar } from './SearchBar'
 import { SignIcon } from './SignIcon'
 import { SIGN_PALETTE } from '../lib/signPalette'
 
+// Pressing Enter in a field commits it and closes it, instead of forcing the
+// user to click elsewhere to blur.
+function blurOnEnter(e: React.KeyboardEvent) {
+  if (e.key === 'Enter') (e.target as HTMLElement).blur()
+}
+
 type TrafficBucket = 'passive' | 'standard' | 'busy' | 'major'
 
 type TrafficEstimate = {
@@ -163,7 +169,7 @@ function TGSResultPanel({
       {/* Intersecting roads */}
       {result.intersectionTreatments.length > 0 && (
         <div>
-          <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-1">Intersecting Roads</p>
+          <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-1">Side Roads</p>
           <div className="flex flex-col gap-2">
             {result.intersectionTreatments.map(t => {
               const armLabel = t.arm.name ?? `Unnamed (${t.arm.classification})`
@@ -171,7 +177,9 @@ function TGSResultPanel({
                 <div key={t.arm.wayId} className="rounded bg-gray-800 px-3 py-2 text-xs">
                   <div className="flex items-center justify-between mb-1.5">
                     <span className="text-white font-semibold truncate mr-2">{armLabel}</span>
-                    <span className="text-gray-500 shrink-0">{t.arm.distanceAlongWzM}m along WZ</span>
+                    <span className="text-gray-500 shrink-0">
+                      {t.arm.atRoundabout ? 'at roundabout' : `${t.arm.distanceAlongWzM}m along WZ`}
+                    </span>
                   </div>
                   <span className={`inline-block px-2 py-1 rounded text-xs font-medium ${
                     t.treatment === 'ROAD_CLOSURE'
@@ -195,7 +203,7 @@ function TGSResultPanel({
       {/* AI justification */}
       {result.justification && (
         <div>
-          <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-1">Design Justification</p>
+          <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-1">Why It&apos;s Set Up This Way</p>
           <p className="text-xs text-gray-400 leading-snug bg-gray-800 rounded px-3 py-2">{result.justification}</p>
         </div>
       )}
@@ -219,7 +227,7 @@ function TGSResultPanel({
 
       {/* Compliance notes */}
       <div>
-        <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-1">Compliance</p>
+        <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-1">Checks &amp; Compliance</p>
         <ul className="flex flex-col gap-1">
           {result.complianceNotes.map((n, i) => (
             <li key={i} className="text-xs text-gray-500 leading-snug">{n}</li>
@@ -265,6 +273,7 @@ function WorkParamsPanel({ workParams, classification, onChange }: {
         <select
           value={workParams.workType}
           onChange={e => onChange({ ...workParams, workType: e.target.value as WorkType })}
+          onKeyDown={blurOnEnter}
           className="w-full bg-gray-800 text-white text-xs rounded px-2 py-1.5 border border-gray-700 focus:outline-none focus:ring-1 focus:ring-yellow-400"
         >
           {(Object.keys(WORK_TYPE_LABEL) as WorkType[]).map(t => (
@@ -321,6 +330,7 @@ function WorkParamsPanel({ workParams, classification, onChange }: {
             type="date"
             value={workParams.startDate}
             onChange={e => onChange({ ...workParams, startDate: e.target.value })}
+            onKeyDown={blurOnEnter}
             className={inputCls}
           />
           <span className="text-gray-500 text-xs shrink-0">to</span>
@@ -329,6 +339,7 @@ function WorkParamsPanel({ workParams, classification, onChange }: {
             value={workParams.endDate}
             min={workParams.startDate}
             onChange={e => onChange({ ...workParams, endDate: e.target.value })}
+            onKeyDown={blurOnEnter}
             className={inputCls}
           />
         </div>
@@ -341,6 +352,7 @@ function WorkParamsPanel({ workParams, classification, onChange }: {
             type="time"
             value={workParams.dayStart}
             onChange={e => onChange({ ...workParams, dayStart: e.target.value })}
+            onKeyDown={blurOnEnter}
             className={inputCls}
           />
           <span className="text-gray-500 text-xs shrink-0">to</span>
@@ -348,6 +360,7 @@ function WorkParamsPanel({ workParams, classification, onChange }: {
             type="time"
             value={workParams.dayEnd}
             onChange={e => onChange({ ...workParams, dayEnd: e.target.value })}
+            onKeyDown={blurOnEnter}
             className={inputCls}
           />
         </div>
@@ -395,6 +408,7 @@ function WorkParamsPanel({ workParams, classification, onChange }: {
           placeholder="e.g. TGS-2026-014"
           value={workParams.tgsNumber}
           onChange={e => onChange({ ...workParams, tgsNumber: e.target.value })}
+          onKeyDown={blurOnEnter}
           className="w-full bg-gray-800 text-white text-xs rounded px-2 py-1.5 border border-gray-700 focus:outline-none focus:ring-1 focus:ring-yellow-400 placeholder-gray-600"
         />
       </div>
@@ -406,6 +420,7 @@ function WorkParamsPanel({ workParams, classification, onChange }: {
           placeholder="Prepared by"
           value={workParams.engineerName}
           onChange={e => onChange({ ...workParams, engineerName: e.target.value })}
+          onKeyDown={blurOnEnter}
           className="w-full bg-gray-800 text-white text-xs rounded px-2 py-1.5 border border-gray-700 focus:outline-none focus:ring-1 focus:ring-yellow-400 placeholder-gray-600"
         />
       </div>
@@ -454,6 +469,7 @@ function EditTGSPanel({ hasEdits, onAddSign, onResetTgs }: {
           <select
             value={selectedCode}
             onChange={e => setSelectedCode(e.target.value)}
+            onKeyDown={blurOnEnter}
             className="flex-1 min-w-0 bg-gray-800 text-white text-xs rounded px-2 py-1.5 border border-gray-700 focus:outline-none focus:ring-1 focus:ring-yellow-400"
           >
             {SIGN_PALETTE.map(s => (
@@ -570,7 +586,7 @@ export function Sidebar({ workZone, placingPoint, roadData, fetchStatus, roundab
               onClick={onClear}
               className="mt-3 text-xs text-gray-500 hover:text-gray-300 underline transition-colors"
             >
-              Clear work zone
+              Start over
             </button>
           )}
         </section>
